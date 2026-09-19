@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VeganCheck – Barcode scannen, vegan oder nicht</title>
+<meta name="description" content="Barcode scannen und sofort sehen, ob ein Produkt vegan ist. Wenn nicht vegan: ist es wenigstens vegetarisch? Für den deutschen Markt.">
+<meta name="theme-color" content="#0f7a3d">
+<meta name="color-scheme" content="light dark">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta property="og:title" content="VeganCheck – Barcode scannen, vegan oder nicht">
+<meta property="og:description" content="Barcode scannen und sofort sehen: vegan, vegetarisch oder keins von beidem.">
+<meta property="og:locale" content="de_DE">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <h1><span class="mark" aria-hidden="true"></span> VeganCheck</h1>
+  <button id="btn-info" class="icon-btn" type="button" aria-label="Info und Datenquelle">?</button>
+</header>
+
+<main>
+  <section id="scanner" class="card scanner" aria-label="Barcode scannen">
+    <div class="video-wrap">
+      <video id="video" playsinline muted autoplay></video>
+      <div class="reticle" aria-hidden="true"><span></span></div>
+      <p id="cam-hint" class="cam-hint">Kamera wird gestartet …</p>
+    </div>
+    <div class="scan-actions">
+      <button id="btn-scan" class="primary" type="button">Barcode scannen</button>
+      <form id="manual-form" class="manual" autocomplete="off">
+        <label class="sr-only" for="manual-code">Barcode-Nummer eingeben</label>
+        <input id="manual-code" inputmode="numeric" pattern="[0-9]*" maxlength="14" placeholder="oder EAN eintippen, z.&nbsp;B. 4000417025005">
+        <button type="submit" class="ghost">Prüfen</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="result" class="result" aria-live="polite" hidden></section>
+
+  <section id="history-wrap" class="history" hidden>
+    <h2>Zuletzt geprüft</h2>
+    <ul id="history"></ul>
+  </section>
+</main>
+
+<dialog id="info-dialog">
+  <h2>Woher kommen die Daten?</h2>
+  <p>Die Produktdaten stammen aus der offenen Datenbank
+     <a href="https://de.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a>
+     (Lizenz&nbsp;ODbL). Die Einstufung beruht auf den dort hinterlegten Zutatenlisten und Siegeln.</p>
+  <p><strong>Keine Garantie.</strong> Rezepturen ändern sich, Einträge können fehlerhaft oder
+     unvollständig sein. Im Zweifel bitte immer die Zutatenliste auf der Verpackung lesen –
+     besonders bei Allergien oder Unverträglichkeiten.</p>
+  <p>Diese Seite läuft komplett im Browser. Es werden keine Nutzerdaten gespeichert oder
+     übertragen; die zuletzt geprüften Produkte liegen nur lokal auf diesem Gerät.
+     Die Barcode-Abfrage geht direkt an Open Food Facts.</p>
+  <button id="btn-close-info" class="primary" type="button">Schließen</button>
+</dialog>
+
+<footer>
+  <p>Daten: <a href="https://de.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (ODbL) · ohne Gewähr</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
