@@ -19,14 +19,15 @@
 </head>
 <body>
 <header class="topbar">
-  <span class="wordmark"><span class="mark" aria-hidden="true"></span> VeganCheck</span>
-  <button id="btn-info" class="icon-btn" type="button" aria-label="Info und Datenquelle">
-    <span aria-hidden="true">?</span>
-  </button>
+  <div class="bar">
+    <span class="wordmark"><span class="mark" aria-hidden="true"></span> VeganCheck</span>
+    <button id="btn-info" class="icon-btn" type="button" aria-label="Info und Datenquelle">
+      <span aria-hidden="true">?</span>
+    </button>
+  </div>
 </header>
 
 <main>
-  <h1 class="large-title">VeganCheck</h1>
 
   <section id="scanner" class="scanner" aria-label="Barcode scannen">
     <div class="video-wrap">
@@ -39,7 +40,7 @@
       <button id="btn-torch" class="torch" type="button" aria-label="Taschenlampe einschalten" aria-pressed="false" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.3 2.5 5.2 13.1a.6.6 0 0 0 .5 1h5.1l-.9 7.4 8.1-10.6a.6.6 0 0 0-.5-1h-5.1z"/></svg>
       </button>
-      <p id="cam-hint" class="cam-hint">Kamera wird gestartet …</p>
+      <p id="cam-hint" class="cam-hint">Barcode ins Bild halten</p>
     </div>
     <button id="btn-scan" class="primary wide" type="button">Barcode scannen</button>
     <form id="manual-form" class="manual" autocomplete="off">
@@ -71,7 +72,7 @@
 </dialog>
 
 <footer>
-  <p>Daten: <a href="https://de.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (ODbL) · ohne Gewähr</p>
+  <p>Daten von <a href="https://de.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a></p>
 </footer>
 
 <script src="app.js"></script>

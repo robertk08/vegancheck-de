@@ -18,6 +18,10 @@ wenigstens **vegetarisch** ist. Mehr macht die App bewusst nicht.
 | **Nicht vegan und nicht vegetarisch** | Fleisch, Fisch, Gelatine, Schmalz … |
 | **Unklar** | Zutaten wie „Aroma“ oder „Mono- und Diglyceride“ sind nicht eindeutig, oder es fehlt eine Zutatenliste |
 
+Unter „Alle Daten“ stehen zusätzlich die Nährwerte je 100 g (Energie in kcal, Fett,
+gesättigte Fettsäuren, Kohlenhydrate, Zucker, Ballaststoffe, Eiweiß, Salz) und die
+vollständige Zutatenliste.
+
 Siegel schlagen die automatische Zutatenanalyse: Ist ein Produkt als vegan gekennzeichnet,
 gilt das als verlässlicher als die Auswertung des Zutatentexts.
 

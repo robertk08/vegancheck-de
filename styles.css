@@ -75,21 +75,22 @@ body {
 
 .topbar {
   position: sticky; top: 0; z-index: 10;
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 11px 20px;
   background: var(--blur-bg);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
   border-bottom: .5px solid transparent;
+  transition: border-color .25s var(--ease);
+}
+.topbar.stuck { border-bottom-color: var(--separator); }
+.bar {
+  width: 100%; max-width: 480px; margin: 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 16px;
 }
 .wordmark {
   display: inline-flex; align-items: center; gap: 8px;
-  font-size: 16px; font-weight: 600; letter-spacing: -.02em;
-  opacity: 0; transform: translateY(7px);
-  transition: opacity .3s var(--ease), transform .3s var(--ease);
+  font-size: 17px; font-weight: 640; letter-spacing: -.022em;
 }
-.topbar.stuck { border-bottom-color: var(--separator); }
-.topbar.stuck .wordmark { opacity: 1; transform: none; }
 .mark {
   width: 21px; height: 21px; border-radius: 6.5px; background: var(--green);
   position: relative; flex: none;
@@ -112,11 +113,7 @@ body {
 
 main {
   width: 100%; max-width: 480px; margin: 0 auto; flex: 1;
-  padding: 8px 16px 40px;
-}
-.large-title {
-  margin: 10px 0 18px;
-  font-size: 34px; line-height: 1.12; font-weight: 700; letter-spacing: -.028em;
+  padding: 16px 16px 40px;
 }
 
 /* -------------------------------------------------------------------- Karten */
@@ -285,22 +282,63 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 .product .meta { font-size: 14px; color: var(--label-2); margin-top: 1px; }
 
 .why {
-  background: var(--card); border-radius: var(--r-card); padding: 16px 18px;
-  box-shadow: var(--shadow); font-size: 15px; line-height: 1.45;
+  background: var(--card); border-radius: var(--r-card); padding: 14px 16px;
+  font-size: 15px; line-height: 1.45;
 }
-.why h3 {
-  margin: 0 0 8px; font-size: 13px; font-weight: 590;
-  letter-spacing: .02em; text-transform: uppercase; color: var(--label-2);
-}
-.why ul { margin: 0; padding-left: 18px; }
+.why ul { margin: 0; padding: 0; list-style: none; }
 .why li { margin: 3px 0; }
+.why li + li { margin-top: 6px; }
 .why p { margin: 0; }
-.why .src {
-  margin-top: 12px; padding-top: 12px; border-top: .5px solid var(--separator);
-  font-size: 13px; color: var(--label-2);
+.src {
+  margin: 4px 2px 0; font-size: 13px; color: var(--label-3); text-align: center;
 }
-.why a { color: var(--green-ink); text-decoration: none; }
-.why a:hover { text-decoration: underline; }
+.src a { color: var(--label-2); text-decoration: none; }
+.src a:hover { text-decoration: underline; }
+
+/* --------------------------------------------------------------- Alle Daten */
+
+.details {
+  background: var(--card); border-radius: var(--r-card); overflow: hidden;
+}
+.details summary {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 16px; cursor: pointer; list-style: none;
+  font-size: 16px; font-weight: 500; letter-spacing: -.012em;
+}
+.details summary::-webkit-details-marker { display: none; }
+.details summary:active { background: var(--fill); }
+.details summary .chev {
+  width: 7px; height: 12px; color: var(--label-3);
+  transition: transform .28s var(--ease);
+}
+.details summary .chev svg {
+  width: 100%; height: 100%; fill: none; stroke: currentColor;
+  stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+}
+.details[open] summary .chev { transform: rotate(90deg); }
+.details[open] summary { border-bottom: .5px solid var(--separator); }
+.details-body { padding: 4px 16px 14px; }
+.details h4 {
+  margin: 12px 0 4px; font-size: 13px; font-weight: 590;
+  letter-spacing: .02em; text-transform: uppercase; color: var(--label-2);
+  display: flex; justify-content: space-between; gap: 8px;
+}
+.details h4 span { font-weight: 400; text-transform: none; letter-spacing: -.004em; }
+.nutri { margin: 0; font-size: 15px; }
+.nutri div {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+  padding: 9px 0; border-top: .5px solid var(--separator);
+}
+.nutri div:first-child { border-top: 0; }
+.nutri div.sub dt { padding-left: 14px; color: var(--label-2); font-size: 14px; }
+.nutri dt { margin: 0; }
+.nutri dd {
+  margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap;
+  font-weight: 500;
+}
+.ing {
+  margin: 4px 0 0; font-size: 15px; line-height: 1.5; color: var(--label-2);
+}
 
 .spinner-box {
   background: var(--card); border-radius: var(--r-card); box-shadow: var(--shadow);

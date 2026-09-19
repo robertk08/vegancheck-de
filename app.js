@@ -7,10 +7,11 @@ const FIELDS = [
   'code', 'product_name', 'product_name_de', 'brands', 'quantity',
   'image_front_small_url', 'image_small_url',
   'labels_tags', 'ingredients_analysis_tags', 'ingredients',
-  'ingredients_text_de', 'ingredients_text'
+  'ingredients_text_de', 'ingredients_text',
+  'nutriments', 'nutrition_data_per', 'serving_size'
 ].join(',');
 const HISTORY_KEY = 'vc.history.v1';
-const CACHE_KEY = 'vc.products.v1';
+const CACHE_KEY = 'vc.products.v2';
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 const $ = (sel) => document.querySelector(sel);
@@ -35,19 +36,19 @@ const GLYPHS = {
 const VERDICTS = {
   vegan: {
     key: 'vegan', cls: 'v-vegan', glyph: GLYPHS.check,
-    title: 'Vegan', sub: 'Keine tierischen Zutaten gefunden.'
+    title: 'Vegan', sub: ''
   },
   vegetarian: {
     key: 'vegetarian', cls: 'v-vegetarian', glyph: GLYPHS.bang,
-    title: 'Nicht vegan', sub: 'Aber vegetarisch – enthält tierische Erzeugnisse wie Milch, Ei oder Honig.'
+    title: 'Vegetarisch', sub: 'Nicht vegan'
   },
   no: {
     key: 'no', cls: 'v-no', glyph: GLYPHS.cross,
-    title: 'Nicht vegan', sub: 'Und auch nicht vegetarisch.'
+    title: 'Nicht vegetarisch', sub: 'Auch nicht vegan'
   },
   unknown: {
     key: 'unknown', cls: 'v-unknown', glyph: GLYPHS.query,
-    title: 'Unklar', sub: 'Die Daten reichen für eine sichere Einstufung nicht aus.'
+    title: 'Unklar', sub: 'Zutaten nicht eindeutig'
   }
 };
 
@@ -106,10 +107,10 @@ function assess(product) {
 
   if (veganLabel) {
     verdict = VERDICTS.vegan;
-    reasons.push('Das Produkt ist als vegan gekennzeichnet (Siegel bzw. Herstellerangabe).');
+    reasons.push('Als vegan gekennzeichnet.');
   } else if (veganTag === 'yes') {
     verdict = VERDICTS.vegan;
-    reasons.push('Alle Zutaten sind als pflanzlich eingestuft.');
+    reasons.push('Alle Zutaten sind pflanzlich.');
   } else if (veganTag === 'no') {
     const bad = ingredientsWith(product, 'vegan', 'no');
     if (vegetarianTag === 'no') {
@@ -121,14 +122,13 @@ function assess(product) {
       if (bad.length) reasons.push('Nicht vegan wegen: ' + bad.join(', ') + '.');
     } else {
       verdict = Object.assign({}, VERDICTS.vegetarian, {
-        sub: 'Ob es vegetarisch ist, lässt sich aus den Daten nicht sicher sagen.'
+        title: 'Nicht vegan', sub: 'Vegetarisch unklar'
       });
       if (bad.length) reasons.push('Nicht vegan wegen: ' + bad.join(', ') + '.');
       const named = new Set(bad.map((n) => n.toLowerCase()));
       const maybeMeat = ingredientsWith(product, 'vegetarian', 'maybe')
         .filter((n) => !named.has(n.toLowerCase()));
-      if (maybeMeat.length) reasons.push('Unklar bei: ' + maybeMeat.join(', ') + '.');
-      else reasons.push('Ob die tierischen Zutaten vegetarisch sind, geht aus den Daten nicht hervor.');
+      if (maybeMeat.length) reasons.push('Unklar: ' + maybeMeat.join(', ') + '.');
     }
   } else {
     // vegan 'maybe' oder gar keine Analyse
@@ -139,16 +139,14 @@ function assess(product) {
       if (meat.length) reasons.push('Nicht vegetarisch wegen: ' + meat.join(', ') + '.');
     } else {
       verdict = Object.assign({}, VERDICTS.unknown, {
-        sub: vegetarianTag === 'yes' || vegetarianLabel
-          ? 'Vegetarisch ja – ob auch vegan, ist nicht sicher.'
-          : VERDICTS.unknown.sub
+        sub: vegetarianTag === 'yes' || vegetarianLabel ? 'Vegetarisch, vegan unklar' : VERDICTS.unknown.sub
       });
       if (maybe.length) {
-        reasons.push('Nicht eindeutig: ' + maybe.join(', ') + '. Solche Zutaten können tierischen oder pflanzlichen Ursprungs sein.');
+        reasons.push('Nicht eindeutig: ' + maybe.join(', ') + ' – kann tierisch oder pflanzlich sein.');
       } else if (!(product.ingredients || []).length) {
-        reasons.push('Für dieses Produkt ist keine Zutatenliste hinterlegt.');
+        reasons.push('Keine Zutatenliste hinterlegt.');
       } else {
-        reasons.push('Die Zutatenliste konnte nicht vollständig ausgewertet werden.');
+        reasons.push('Zutatenliste nicht vollständig auswertbar.');
       }
     }
   }
@@ -215,19 +213,19 @@ function productTitle(p) {
 function renderLoading(code) {
   els.result.hidden = false;
   els.result.innerHTML =
-    `<div class="spinner-box"><div class="spinner"></div>${esc(code)} wird geprüft …</div>`;
+    `<div class="spinner-box"><div class="spinner"></div>Wird geprüft …</div>`;
   els.result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function renderMessage(title, body, code) {
+function renderMessage(title, body) {
   els.result.hidden = false;
   els.result.innerHTML = `
     <div class="verdict v-unknown">
       ${glyphMarkup(GLYPHS.query)}
       <h2>${esc(title)}</h2>
       <p class="sub">${body}</p>
-    </div>
-    ${code ? `<div class="why"><h3>Barcode</h3><p>${esc(code)}</p></div>` : ''}`;
+    </div>`;
+  els.result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function renderProduct(code, product) {
@@ -240,7 +238,7 @@ function renderProduct(code, product) {
     <div class="verdict ${verdict.cls}">
       ${glyphMarkup(verdict.glyph)}
       <h2>${esc(verdict.title)}</h2>
-      <p class="sub">${esc(verdict.sub)}</p>
+      ${verdict.sub ? `<p class="sub">${esc(verdict.sub)}</p>` : ''}
       ${veganLabel ? '<span class="badge">Vegan gekennzeichnet</span>' : ''}
     </div>
     <div class="product">
@@ -251,12 +249,12 @@ function renderProduct(code, product) {
       </div>
     </div>
     ${reasons.length ? `<div class="why">
-      <h3>Warum</h3>
       <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
-      <p class="src">Angaben ohne Gewähr – Rezepturen ändern sich. Quelle:
-        <a href="https://de.openfoodfacts.org/produkt/${encodeURIComponent(code)}" target="_blank" rel="noopener">Open Food Facts</a>
-      </p>
-    </div>` : ''}`;
+    </div>` : ''}
+    ${detailsMarkup(product)}
+    <p class="src">Ohne Gewähr ·
+      <a href="https://de.openfoodfacts.org/produkt/${encodeURIComponent(code)}" target="_blank" rel="noopener">Open Food Facts</a>
+    </p>`;
 
   els.result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   addHistory(code, productTitle(product), verdict.key);
@@ -268,17 +266,78 @@ async function check(code) {
     const product = await fetchProduct(code);
     if (!product) {
       renderMessage('Nicht gefunden',
-        `Zu diesem Barcode gibt es keinen Eintrag in der Datenbank. Du kannst das Produkt bei
+        `Kein Eintrag für ${esc(code)}.
          <a href="https://de.openfoodfacts.org/cgi/product.pl?type=add&code=${encodeURIComponent(code)}"
-            target="_blank" rel="noopener">Open Food Facts</a> ergänzen.`, code);
+            target="_blank" rel="noopener">Bei Open Food Facts ergänzen</a>`);
       return;
     }
     renderProduct(code, product);
   } catch (err) {
-    renderMessage('Keine Verbindung',
-      'Die Produktdaten konnten nicht geladen werden. Bitte Internetverbindung prüfen und erneut versuchen.',
-      code);
+    renderMessage('Keine Verbindung', 'Produktdaten konnten nicht geladen werden.');
   }
+}
+
+/* ------------------------------------------------------------- Alle Daten */
+
+const NUM = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 });
+
+const NUTRIENTS = [
+  ['energy-kcal', 'Energie', 'kcal'],
+  ['fat', 'Fett', 'g'],
+  ['saturated-fat', 'davon gesättigte Fettsäuren', 'g'],
+  ['carbohydrates', 'Kohlenhydrate', 'g'],
+  ['sugars', 'davon Zucker', 'g'],
+  ['fiber', 'Ballaststoffe', 'g'],
+  ['proteins', 'Eiweiß', 'g'],
+  ['salt', 'Salz', 'g']
+];
+
+/** Nährwerte je 100 g, sonst je Portion – je nachdem, was hinterlegt ist. */
+function nutritionRows(product) {
+  const n = product.nutriments || {};
+  for (const [suffix, label] of [['_100g', 'je 100\u00a0g'], ['_serving', 'je Portion']]) {
+    const rows = NUTRIENTS
+      .filter(([key]) => typeof n[key + suffix] === 'number')
+      .map(([key, name, unit]) => ({
+        name,
+        value: NUM.format(n[key + suffix]) + '\u00a0' + unit,
+        sub: name.startsWith('davon')
+      }));
+    if (rows.length) return { rows, label };
+  }
+  return { rows: [], label: '' };
+}
+
+function ingredientsText(product) {
+  const text = product.ingredients_text_de || product.ingredients_text || '';
+  // Open Food Facts markiert Allergene mit Unterstrichen (_Milch_).
+  return text.replace(/_/g, '').replace(/\s+/g, ' ').trim();
+}
+
+function detailsMarkup(product) {
+  const { rows, label } = nutritionRows(product);
+  const text = ingredientsText(product);
+  if (!rows.length && !text) return '';
+
+  const nutrition = rows.length ? `
+    <h4>Nährwerte <span>${esc(label)}</span></h4>
+    <dl class="nutri">
+      ${rows.map((r) => `<div${r.sub ? ' class="sub"' : ''}>
+        <dt>${esc(r.name)}</dt><dd>${esc(r.value)}</dd></div>`).join('')}
+    </dl>` : '';
+
+  const ingredients = text ? `
+    <h4>Zutaten</h4>
+    <p class="ing">${esc(text)}</p>` : '';
+
+  return `
+    <details class="details">
+      <summary>
+        <span>Alle Daten</span>
+        <span class="chev" aria-hidden="true"><svg viewBox="0 0 7 12"><path d="M1 1l5 5-5 5"/></svg></span>
+      </summary>
+      <div class="details-body">${nutrition}${ingredients}</div>
+    </details>`;
 }
 
 /* ----------------------------------------------------------------- Verlauf */
@@ -422,11 +481,11 @@ async function startScan() {
   if (stream) { stopScan(); return; }
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    els.camHint.textContent = 'Dieser Browser unterstützt keine Kamera. Bitte den Barcode eintippen.';
+    els.camHint.textContent = 'Kamera nicht verfügbar – Nummer eintippen';
     return;
   }
   if (!window.isSecureContext) {
-    els.camHint.textContent = 'Die Kamera braucht eine HTTPS-Verbindung. Bitte den Barcode eintippen.';
+    els.camHint.textContent = 'Kamera braucht HTTPS – Nummer eintippen';
     return;
   }
 
@@ -442,8 +501,8 @@ async function startScan() {
   } catch (err) {
     stopScan();
     els.camHint.textContent = (err && err.name === 'NotAllowedError')
-      ? 'Kein Zugriff auf die Kamera. Bitte in den Browser-Einstellungen erlauben – oder den Barcode eintippen.'
-      : 'Die Kamera ist nicht verfügbar. Bitte den Barcode eintippen.';
+      ? 'Kein Kamerazugriff – im Browser erlauben oder Nummer eintippen'
+      : 'Kamera nicht verfügbar – Nummer eintippen';
   }
 }
 
@@ -457,8 +516,7 @@ els.form.addEventListener('submit', (e) => {
   const code = els.input.value.replace(/\D/g, '');
   if (code.length < 6) {
     els.input.focus();
-    renderMessage('Barcode unvollständig',
-      'Bitte die komplette Nummer unter dem Strichcode eingeben (meist 8 oder 13 Ziffern).');
+    renderMessage('Nummer unvollständig', 'Meist 8 oder 13 Ziffern.');
     return;
   }
   stopScan();
@@ -471,15 +529,11 @@ els.history.addEventListener('click', (e) => {
   if (btn) check(btn.dataset.code);
 });
 
-// Wie in iOS: Der Titel wandert in die Navigationsleiste, sobald er wegscrollt.
+// Trennlinie unter der Leiste erscheint erst, sobald Inhalt darunter liegt.
 const topbar = document.querySelector('.topbar');
-const largeTitle = document.querySelector('.large-title');
-if (window.IntersectionObserver && topbar && largeTitle) {
-  new IntersectionObserver(
-    ([entry]) => topbar.classList.toggle('stuck', !entry.isIntersecting),
-    { rootMargin: '-46px 0px 0px 0px', threshold: 0 }
-  ).observe(largeTitle);
-}
+const onScroll = () => topbar.classList.toggle('stuck', window.scrollY > 2);
+window.addEventListener('scroll', onScroll, { passive: true });
+onScroll();
 
 els.btnInfo.addEventListener('click', () => els.dialog.showModal());
 els.btnCloseInfo.addEventListener('click', () => els.dialog.close());
@@ -487,7 +541,7 @@ els.btnCloseInfo.addEventListener('click', () => els.dialog.close());
 document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
 
 renderHistory();
-els.camHint.textContent = 'Tippe auf „Barcode scannen“ und halte den Strichcode ins Bild.';
+els.camHint.textContent = 'Barcode ins Bild halten';
 
 // Barcode aus der Adresse, z. B. ?code=4000417025005
 const initial = new URLSearchParams(location.search).get('code');
