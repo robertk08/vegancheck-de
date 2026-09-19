@@ -21,9 +21,9 @@
   --gray: #8e8e93;   --gray-ink: #5b5b60;
 
   --tint: 11%;
-  --r-card: 20px;
-  --r-ctl: 13px;
-  --shadow: 0 1px 1px rgba(0, 0, 0, .03), 0 6px 20px rgba(0, 0, 0, .05);
+  --r-card: 14px;
+  --r-ctl: 12px;
+  --shadow: none;
   --ease: cubic-bezier(.32, .72, 0, 1);
 }
 
@@ -102,22 +102,21 @@ body {
   width: 30px; height: 30px; padding: 0; flex: none;
   display: grid; place-items: center;
   border: 0; border-radius: 50%;
-  background: var(--fill); color: var(--label-2); cursor: pointer;
+  background: var(--fill); color: var(--green-ink); cursor: pointer;
+  font-size: 17px; font-weight: 700; line-height: 1;
+  transition: background-color .2s var(--ease), transform .2s var(--ease);
 }
-.icon-btn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
-.icon-btn svg .fill { fill: currentColor; stroke: none; }
+.icon-btn span { display: block; transform: translateY(-.5px); }
+.icon-btn:hover { background: color-mix(in srgb, var(--green) 16%, var(--fill)); }
+.icon-btn:active { transform: scale(.92); }
 
 main {
   width: 100%; max-width: 480px; margin: 0 auto; flex: 1;
   padding: 8px 16px 40px;
 }
 .large-title {
-  margin: 12px 4px 2px;
+  margin: 10px 0 18px;
   font-size: 34px; line-height: 1.12; font-weight: 700; letter-spacing: -.028em;
-}
-.lede {
-  margin: 0 4px 20px;
-  font-size: 17px; color: var(--label-2); letter-spacing: -.012em;
 }
 
 /* -------------------------------------------------------------------- Karten */
@@ -131,11 +130,11 @@ main {
 
 /* ------------------------------------------------------------------ Scanner */
 
-.scanner { padding: 12px; }
+.scanner { display: grid; gap: 10px; }
 .video-wrap {
   position: relative;
   aspect-ratio: 16 / 10;
-  border-radius: 13px;
+  border-radius: var(--r-card);
   overflow: hidden;
   background: var(--fill);
   display: flex; align-items: center; justify-content: center;
@@ -167,6 +166,17 @@ body.scanning .reticle { display: block; }
   50%      { transform: translateY(36px);  opacity: 1; }
 }
 
+.torch {
+  position: absolute; top: 10px; right: 10px; z-index: 2;
+  width: 38px; height: 38px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center;
+  background: rgba(28, 28, 30, .55); color: #fff;
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+}
+.torch[hidden] { display: none; }
+.torch svg { width: 19px; height: 19px; fill: currentColor; }
+.torch[aria-pressed="true"] { background: #fff; color: #1c1c1e; }
+
 .cam-hint {
   position: absolute; margin: 0; padding: 0 32px;
   display: flex; flex-direction: column; align-items: center; gap: 14px;
@@ -179,8 +189,6 @@ body.scanning .cam-hint { display: none; }
   -webkit-mask: var(--bars) center / contain no-repeat;
   mask: var(--bars) center / contain no-repeat;
 }
-
-.scan-actions { padding: 12px 2px 2px; display: grid; gap: 8px; }
 
 /* ---------------------------------------------------------- Bedienelemente */
 
@@ -205,28 +213,28 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 }
 
 .manual {
-  display: flex; align-items: center; gap: 4px;
-  background: var(--fill); border-radius: var(--r-ctl); padding: 3px 4px 3px 0;
+  display: flex; align-items: center;
+  background: var(--card); border-radius: var(--r-card); padding: 0 6px 0 0;
 }
 .manual input {
   flex: 1; min-width: 0; font: inherit; letter-spacing: -.01em;
-  padding: 11px 14px; border: 0; background: transparent; color: var(--label);
+  padding: 14px 16px; border: 0; background: transparent; color: var(--label);
   font-variant-numeric: tabular-nums;
 }
 .manual input::placeholder { color: var(--label-3); }
 .manual input:focus { outline: 0; }
-.manual:focus-within { box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 30%, transparent); }
+.manual:focus-within { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--green) 55%, transparent); }
 
 /* ------------------------------------------------------------------ Ergebnis */
 
-.result { margin-top: 22px; display: grid; gap: 12px; }
+.result { margin-top: 20px; display: grid; gap: 10px; }
 .result > * { animation: rise .42s var(--ease) both; }
 .result > :nth-child(2) { animation-delay: .04s; }
 .result > :nth-child(3) { animation-delay: .08s; }
 @keyframes rise { from { opacity: 0; transform: translateY(10px); } }
 
 .verdict {
-  border-radius: var(--r-card); padding: 26px 22px 24px;
+  border-radius: var(--r-card); padding: 24px 22px 22px;
   text-align: center; box-shadow: var(--shadow);
 }
 .verdict .glyph {
@@ -271,7 +279,7 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 }
 .product img {
   width: 52px; height: 52px; flex: none; object-fit: contain;
-  border-radius: 11px; background: #fff;
+  border-radius: 9px; background: #fff;
 }
 .product .name { font-size: 17px; font-weight: 590; letter-spacing: -.014em; }
 .product .meta { font-size: 14px; color: var(--label-2); margin-top: 1px; }
@@ -307,9 +315,9 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 
 /* ------------------------------------------------------------------ Verlauf */
 
-.history { margin-top: 30px; }
+.history { margin-top: 28px; }
 .history h2 {
-  margin: 0 0 8px 18px;
+  margin: 0 0 7px 16px;
   font-size: 13px; font-weight: 590; letter-spacing: .02em;
   text-transform: uppercase; color: var(--label-2);
 }
@@ -336,9 +344,9 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 /* ------------------------------------------------------------ Sheet & Fuß */
 
 dialog {
-  width: min(400px, calc(100% - 40px));
+  width: min(380px, calc(100% - 40px));
   margin: auto; padding: 26px 24px 20px;
-  border: 0; border-radius: 26px;
+  border: 0; border-radius: 20px;
   background: var(--card); color: var(--label);
   box-shadow: 0 24px 64px rgba(0, 0, 0, .22);
   animation: pop .34s var(--ease);

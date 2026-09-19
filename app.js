@@ -16,6 +16,7 @@ const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 const $ = (sel) => document.querySelector(sel);
 const els = {
   video: $('#video'), camHint: $('#cam-hint'), btnScan: $('#btn-scan'),
+  btnTorch: $('#btn-torch'),
   form: $('#manual-form'), input: $('#manual-code'), result: $('#result'),
   history: $('#history'), historyWrap: $('#history-wrap'),
   dialog: $('#info-dialog'), btnInfo: $('#btn-info'), btnCloseInfo: $('#btn-close-info')
@@ -311,9 +312,39 @@ const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'];
 let stream = null;
 let detectLoop = null;
 let zxingReader = null;
+let torchTrack = null;
+
+/* Die Taschenlampe gibt es nur, wo der Browser sie als Fähigkeit der Kamera
+   meldet – auf iOS tut er das bis heute nicht. */
+function setupTorch() {
+  const track = stream && stream.getVideoTracks()[0];
+  const caps = track && track.getCapabilities ? track.getCapabilities() : null;
+  torchTrack = caps && 'torch' in caps ? track : null;
+  setTorchUi(false);
+  els.btnTorch.hidden = !torchTrack;
+}
+
+function setTorchUi(on) {
+  els.btnTorch.setAttribute('aria-pressed', on ? 'true' : 'false');
+  els.btnTorch.setAttribute('aria-label', on ? 'Taschenlampe ausschalten' : 'Taschenlampe einschalten');
+}
+
+async function toggleTorch() {
+  if (!torchTrack) return;
+  const on = els.btnTorch.getAttribute('aria-pressed') !== 'true';
+  try {
+    await torchTrack.applyConstraints({ advanced: [{ torch: on }] });
+    setTorchUi(on);
+  } catch (_) {
+    torchTrack = null;
+    els.btnTorch.hidden = true;
+  }
+}
 
 function stopScan() {
   document.body.classList.remove('scanning');
+  els.btnTorch.hidden = true;
+  torchTrack = null;
   els.btnScan.textContent = 'Barcode scannen';
   els.btnScan.classList.remove('secondary');
   if (detectLoop) { cancelAnimationFrame(detectLoop); detectLoop = null; }
@@ -405,6 +436,7 @@ async function startScan() {
   try {
     stream = await openCamera();
     document.body.classList.add('scanning');
+    setupTorch();
     if ('BarcodeDetector' in window) await scanWithNativeDetector();
     else await scanWithZXing();
   } catch (err) {
@@ -418,6 +450,7 @@ async function startScan() {
 /* -------------------------------------------------------------------- Start */
 
 els.btnScan.addEventListener('click', startScan);
+els.btnTorch.addEventListener('click', toggleTorch);
 
 els.form.addEventListener('submit', (e) => {
   e.preventDefault();

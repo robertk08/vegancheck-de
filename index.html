@@ -21,15 +21,14 @@
 <header class="topbar">
   <span class="wordmark"><span class="mark" aria-hidden="true"></span> VeganCheck</span>
   <button id="btn-info" class="icon-btn" type="button" aria-label="Info und Datenquelle">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.3 9.2a2.8 2.8 0 1 1 3.7 3.1c-.7.3-1 .9-1 1.6v.5"/><circle cx="12" cy="17.6" r="1.1" class="fill"/></svg>
+    <span aria-hidden="true">?</span>
   </button>
 </header>
 
 <main>
-  <h1 class="large-title">Vegan?</h1>
-  <p class="lede">Barcode scannen – und du weißt es.</p>
+  <h1 class="large-title">VeganCheck</h1>
 
-  <section id="scanner" class="card scanner" aria-label="Barcode scannen">
+  <section id="scanner" class="scanner" aria-label="Barcode scannen">
     <div class="video-wrap">
       <video id="video" playsinline muted autoplay></video>
       <div class="reticle" aria-hidden="true">
@@ -37,16 +36,17 @@
         <span class="corner c3"></span><span class="corner c4"></span>
         <span class="sweep"></span>
       </div>
+      <button id="btn-torch" class="torch" type="button" aria-label="Taschenlampe einschalten" aria-pressed="false" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.3 2.5 5.2 13.1a.6.6 0 0 0 .5 1h5.1l-.9 7.4 8.1-10.6a.6.6 0 0 0-.5-1h-5.1z"/></svg>
+      </button>
       <p id="cam-hint" class="cam-hint">Kamera wird gestartet …</p>
     </div>
-    <div class="scan-actions">
-      <button id="btn-scan" class="primary" type="button">Barcode scannen</button>
-      <form id="manual-form" class="manual" autocomplete="off">
-        <label class="sr-only" for="manual-code">Barcode-Nummer eingeben</label>
-        <input id="manual-code" inputmode="numeric" pattern="[0-9]*" maxlength="14" placeholder="Nummer eintippen">
-        <button type="submit" class="plain">Prüfen</button>
-      </form>
-    </div>
+    <button id="btn-scan" class="primary wide" type="button">Barcode scannen</button>
+    <form id="manual-form" class="manual" autocomplete="off">
+      <label class="sr-only" for="manual-code">Barcode-Nummer eingeben</label>
+      <input id="manual-code" inputmode="numeric" pattern="[0-9]*" maxlength="14" placeholder="Nummer eintippen">
+      <button type="submit" class="plain">Prüfen</button>
+    </form>
   </section>
 
   <section id="result" class="result" aria-live="polite" hidden></section>
