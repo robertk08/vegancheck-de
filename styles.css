@@ -282,12 +282,6 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 .why li { margin: 3px 0; }
 .why li + li { margin-top: 6px; }
 .why p { margin: 0; }
-.src {
-  margin: 4px 2px 0; font-size: 13px; color: var(--label-3); text-align: center;
-}
-.src a { color: var(--label-2); text-decoration: none; }
-.src a:hover { text-decoration: underline; }
-
 /* --------------------------------------------------------------- Alle Daten */
 
 .details {

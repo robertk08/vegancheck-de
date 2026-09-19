@@ -251,10 +251,7 @@ function renderProduct(code, product) {
     ${reasons.length ? `<div class="why">
       <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
     </div>` : ''}
-    ${detailsMarkup(product)}
-    <p class="src">Ohne Gewähr ·
-      <a href="https://de.openfoodfacts.org/produkt/${encodeURIComponent(code)}" target="_blank" rel="noopener">Open Food Facts</a>
-    </p>`;
+    ${detailsMarkup(product)}`;
 
   els.result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   addHistory(code, productTitle(product), verdict.key);
