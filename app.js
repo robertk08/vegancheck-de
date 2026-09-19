@@ -23,24 +23,35 @@ const els = {
 
 /* ---------------------------------------------------------------- Einstufung */
 
+const GLYPHS = {
+  check: '<path d="M4.8 12.9 9.6 17.7 19.2 6.9"/>',
+  bang:  '<path d="M12 5.4v8.2"/><circle cx="12" cy="18.1" r="1.35" class="fill"/>',
+  cross: '<path d="M6.4 6.4 17.6 17.6M17.6 6.4 6.4 17.6"/>',
+  query: '<path d="M8.7 8.9a3.4 3.4 0 1 1 4.4 3.9c-.8.3-1.2 1-1.2 1.9v.5"/>'
+         + '<circle cx="12" cy="18.4" r="1.35" class="fill"/>'
+};
+
 const VERDICTS = {
   vegan: {
-    key: 'vegan', cls: 'v-vegan', glyph: '✓',
+    key: 'vegan', cls: 'v-vegan', glyph: GLYPHS.check,
     title: 'Vegan', sub: 'Keine tierischen Zutaten gefunden.'
   },
   vegetarian: {
-    key: 'vegetarian', cls: 'v-vegetarian', glyph: '!',
+    key: 'vegetarian', cls: 'v-vegetarian', glyph: GLYPHS.bang,
     title: 'Nicht vegan', sub: 'Aber vegetarisch – enthält tierische Erzeugnisse wie Milch, Ei oder Honig.'
   },
   no: {
-    key: 'no', cls: 'v-no', glyph: '✕',
+    key: 'no', cls: 'v-no', glyph: GLYPHS.cross,
     title: 'Nicht vegan', sub: 'Und auch nicht vegetarisch.'
   },
   unknown: {
-    key: 'unknown', cls: 'v-unknown', glyph: '?',
+    key: 'unknown', cls: 'v-unknown', glyph: GLYPHS.query,
     title: 'Unklar', sub: 'Die Daten reichen für eine sichere Einstufung nicht aus.'
   }
 };
+
+const glyphMarkup = (paths) =>
+  `<div class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg></div>`;
 
 const has = (list, tag) => Array.isArray(list) && list.includes(tag);
 
@@ -203,7 +214,7 @@ function productTitle(p) {
 function renderLoading(code) {
   els.result.hidden = false;
   els.result.innerHTML =
-    `<div class="spinner-box"><div class="spinner"></div>Prüfe Barcode ${esc(code)} …</div>`;
+    `<div class="spinner-box"><div class="spinner"></div>${esc(code)} wird geprüft …</div>`;
   els.result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
@@ -211,7 +222,8 @@ function renderMessage(title, body, code) {
   els.result.hidden = false;
   els.result.innerHTML = `
     <div class="verdict v-unknown">
-      <h2><span class="glyph" aria-hidden="true">?</span>${esc(title)}</h2>
+      ${glyphMarkup(GLYPHS.query)}
+      <h2>${esc(title)}</h2>
       <p class="sub">${body}</p>
     </div>
     ${code ? `<div class="why"><h3>Barcode</h3><p>${esc(code)}</p></div>` : ''}`;
@@ -225,9 +237,10 @@ function renderProduct(code, product) {
   els.result.hidden = false;
   els.result.innerHTML = `
     <div class="verdict ${verdict.cls}">
-      <h2><span class="glyph" aria-hidden="true">${verdict.glyph}</span>${esc(verdict.title)}</h2>
+      ${glyphMarkup(verdict.glyph)}
+      <h2>${esc(verdict.title)}</h2>
       <p class="sub">${esc(verdict.sub)}</p>
-      ${veganLabel ? '<span class="badge">Als vegan gekennzeichnet</span>' : ''}
+      ${veganLabel ? '<span class="badge">Vegan gekennzeichnet</span>' : ''}
     </div>
     <div class="product">
       ${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ''}
@@ -288,6 +301,7 @@ function renderHistory() {
       <span class="dot d-${esc(e.v)}"></span>
       <span class="t">${esc(e.name)}</span>
       <span class="c">${esc(e.code)}</span>
+      <span class="chev" aria-hidden="true"><svg viewBox="0 0 7 12"><path d="M1 1l5 5-5 5"/></svg></span>
     </button></li>`).join('');
 }
 
@@ -301,6 +315,7 @@ let zxingReader = null;
 function stopScan() {
   document.body.classList.remove('scanning');
   els.btnScan.textContent = 'Barcode scannen';
+  els.btnScan.classList.remove('secondary');
   if (detectLoop) { cancelAnimationFrame(detectLoop); detectLoop = null; }
   if (zxingReader) { try { zxingReader.reset(); } catch (_) {} zxingReader = null; }
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
@@ -386,6 +401,7 @@ async function startScan() {
 
   els.camHint.textContent = 'Kamera wird gestartet …';
   els.btnScan.textContent = 'Scannen beenden';
+  els.btnScan.classList.add('secondary');
   try {
     stream = await openCamera();
     document.body.classList.add('scanning');
@@ -421,6 +437,16 @@ els.history.addEventListener('click', (e) => {
   const btn = e.target.closest('button[data-code]');
   if (btn) check(btn.dataset.code);
 });
+
+// Wie in iOS: Der Titel wandert in die Navigationsleiste, sobald er wegscrollt.
+const topbar = document.querySelector('.topbar');
+const largeTitle = document.querySelector('.large-title');
+if (window.IntersectionObserver && topbar && largeTitle) {
+  new IntersectionObserver(
+    ([entry]) => topbar.classList.toggle('stuck', !entry.isIntersecting),
+    { rootMargin: '-46px 0px 0px 0px', threshold: 0 }
+  ).observe(largeTitle);
+}
 
 els.btnInfo.addEventListener('click', () => els.dialog.showModal());
 els.btnCloseInfo.addEventListener('click', () => els.dialog.close());

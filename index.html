@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VeganCheck – Barcode scannen, vegan oder nicht</title>
 <meta name="description" content="Barcode scannen und sofort sehen, ob ein Produkt vegan ist. Wenn nicht vegan: ist es wenigstens vegetarisch? Für den deutschen Markt.">
-<meta name="theme-color" content="#0f7a3d">
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -18,23 +19,32 @@
 </head>
 <body>
 <header class="topbar">
-  <h1><span class="mark" aria-hidden="true"></span> VeganCheck</h1>
-  <button id="btn-info" class="icon-btn" type="button" aria-label="Info und Datenquelle">?</button>
+  <span class="wordmark"><span class="mark" aria-hidden="true"></span> VeganCheck</span>
+  <button id="btn-info" class="icon-btn" type="button" aria-label="Info und Datenquelle">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.3 9.2a2.8 2.8 0 1 1 3.7 3.1c-.7.3-1 .9-1 1.6v.5"/><circle cx="12" cy="17.6" r="1.1" class="fill"/></svg>
+  </button>
 </header>
 
 <main>
+  <h1 class="large-title">Vegan?</h1>
+  <p class="lede">Barcode scannen – und du weißt es.</p>
+
   <section id="scanner" class="card scanner" aria-label="Barcode scannen">
     <div class="video-wrap">
       <video id="video" playsinline muted autoplay></video>
-      <div class="reticle" aria-hidden="true"><span></span></div>
+      <div class="reticle" aria-hidden="true">
+        <span class="corner c1"></span><span class="corner c2"></span>
+        <span class="corner c3"></span><span class="corner c4"></span>
+        <span class="sweep"></span>
+      </div>
       <p id="cam-hint" class="cam-hint">Kamera wird gestartet …</p>
     </div>
     <div class="scan-actions">
       <button id="btn-scan" class="primary" type="button">Barcode scannen</button>
       <form id="manual-form" class="manual" autocomplete="off">
         <label class="sr-only" for="manual-code">Barcode-Nummer eingeben</label>
-        <input id="manual-code" inputmode="numeric" pattern="[0-9]*" maxlength="14" placeholder="oder EAN eintippen, z.&nbsp;B. 4000417025005">
-        <button type="submit" class="ghost">Prüfen</button>
+        <input id="manual-code" inputmode="numeric" pattern="[0-9]*" maxlength="14" placeholder="Nummer eintippen">
+        <button type="submit" class="plain">Prüfen</button>
       </form>
     </div>
   </section>
@@ -43,22 +53,21 @@
 
   <section id="history-wrap" class="history" hidden>
     <h2>Zuletzt geprüft</h2>
-    <ul id="history"></ul>
+    <ul id="history" class="list"></ul>
   </section>
 </main>
 
 <dialog id="info-dialog">
-  <h2>Woher kommen die Daten?</h2>
+  <h2>Woher die Daten kommen</h2>
   <p>Die Produktdaten stammen aus der offenen Datenbank
-     <a href="https://de.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a>
-     (Lizenz&nbsp;ODbL). Die Einstufung beruht auf den dort hinterlegten Zutatenlisten und Siegeln.</p>
+     <a href="https://de.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (ODbL).
+     Die Einstufung beruht auf den dort hinterlegten Zutatenlisten und Siegeln.</p>
   <p><strong>Keine Garantie.</strong> Rezepturen ändern sich, Einträge können fehlerhaft oder
-     unvollständig sein. Im Zweifel bitte immer die Zutatenliste auf der Verpackung lesen –
-     besonders bei Allergien oder Unverträglichkeiten.</p>
-  <p>Diese Seite läuft komplett im Browser. Es werden keine Nutzerdaten gespeichert oder
-     übertragen; die zuletzt geprüften Produkte liegen nur lokal auf diesem Gerät.
-     Die Barcode-Abfrage geht direkt an Open Food Facts.</p>
-  <button id="btn-close-info" class="primary" type="button">Schließen</button>
+     unvollständig sein. Im Zweifel die Zutatenliste auf der Verpackung lesen – besonders bei
+     Allergien.</p>
+  <p>Alles läuft im Browser: keine Tracker, keine Cookies, kein Server. Verlauf und
+     Zwischenspeicher bleiben auf diesem Gerät.</p>
+  <button id="btn-close-info" class="primary wide" type="button">Fertig</button>
 </dialog>
 
 <footer>
