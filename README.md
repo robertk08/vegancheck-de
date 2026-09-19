@@ -32,9 +32,14 @@ Reine statische Seite, kein Backend, kein Build-Schritt, keine Tracker.
 - **Scanner:** `BarcodeDetector` des Browsers, wo vorhanden (Chrome/Android);
   sonst [ZXing](https://github.com/zxing-js/library) als Fallback, lokal eingebunden
   und erst bei Bedarf nachgeladen. Formate: EAN-13, EAN-8, UPC-A, UPC-E, Code 128.
+- **Jede Ausrichtung:** zeilenweise Leser sehen nur ungefähr waagerechte Codes.
+  Die Scanschleife legt den Frame deshalb reihum in vier Lagen vor – 0°, 90°, 45°,
+  135° – und deckt mit der Toleranz von rund ±20° je Lage den vollen Kreis ab.
 - **Daten:** Open Food Facts API v2 (`lc=de&cc=de`), direkt aus dem Browser.
   Ergebnisse werden 7 Tage lokal zwischengespeichert.
 - **PWA:** installierbar, App-Hülle funktioniert offline (Produktabfragen brauchen Netz).
+  Der Service Worker geht zuerst ans Netz und nutzt den Cache nur als Rückfall, damit
+  Aktualisierungen sofort ankommen.
 - **Privatsphäre:** keine Analyse, keine Cookies, keine Server. Verlauf und Cache liegen
   nur im `localStorage` des Geräts.
 

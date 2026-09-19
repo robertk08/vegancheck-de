@@ -84,21 +84,14 @@ body {
 .topbar.stuck { border-bottom-color: var(--separator); }
 .bar {
   width: 100%; max-width: 480px; margin: 0 auto;
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  display: grid; grid-template-columns: 30px 1fr 30px; align-items: center; gap: 12px;
   padding: 11px 16px;
 }
-.wordmark {
-  display: inline-flex; align-items: center; gap: 8px;
+.title {
+  margin: 0; text-align: center;
   font-size: 17px; font-weight: 640; letter-spacing: -.022em;
 }
-.mark {
-  width: 21px; height: 21px; border-radius: 6.5px; background: var(--green);
-  position: relative; flex: none;
-}
-.mark::after {
-  content: ""; position: absolute; inset: 5px 4px;
-  background: repeating-linear-gradient(90deg, #fff 0 2px, transparent 2px 3.6px);
-}
+.slot { width: 30px; }
 .icon-btn {
   width: 30px; height: 30px; padding: 0; flex: none;
   display: grid; place-items: center;

@@ -370,7 +370,6 @@ function renderHistory() {
 const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'];
 let stream = null;
 let detectLoop = null;
-let zxingReader = null;
 let torchTrack = null;
 
 /* Die Taschenlampe gibt es nur, wo der Browser sie als Fähigkeit der Kamera
@@ -407,7 +406,6 @@ function stopScan() {
   els.btnScan.textContent = 'Barcode scannen';
   els.btnScan.classList.remove('secondary');
   if (detectLoop) { cancelAnimationFrame(detectLoop); detectLoop = null; }
-  if (zxingReader) { try { zxingReader.reset(); } catch (_) {} zxingReader = null; }
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
   els.video.srcObject = null;
 }
@@ -437,24 +435,73 @@ function loadScript(src) {
   });
 }
 
-/* ZXing hängt den Stream selbst ans <video> und wartet dabei auf das
-   'playing'-Event – deshalb darf die Wiedergabe vorher nicht gestartet sein. */
+/* Strichcodes liegen im Regal mal quer, mal hochkant, mal schief. Zeilenweise
+   Leser sehen nur ungefähr waagerechte Codes, deshalb bekommen sie den Frame
+   reihum in vier Lagen vorgelegt: 0°, 90°, 45°, 135°. Zusammen mit der
+   Toleranz von rund ±20° je Lage deckt das jede Ausrichtung ab; auf dem Kopf
+   stehende Codes liest ZXing ohnehin selbst. */
+const ANGLES = [0, 90, 45, 135];
+const frameCanvas = document.createElement('canvas');
+
+function grabFrame(angle) {
+  const video = els.video;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return null;
+
+  const scale = Math.min(1, 800 / Math.max(vw, vh));
+  const w = Math.round(vw * scale), h = Math.round(vh * scale);
+  const canvas = frameCanvas;
+  // Nur die Vierteldrehung tauscht die Seiten; schräge Lagen behalten das
+  // Format und schneiden die Ecken ab – der Code liegt im Sucherrahmen.
+  canvas.width = angle === 90 ? h : w;
+  canvas.height = angle === 90 ? w : h;
+
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.save();
+  ctx.translate(canvas.width / 2, canvas.height / 2);
+  ctx.rotate(-angle * Math.PI / 180);
+  ctx.drawImage(video, -w / 2, -h / 2, w, h);
+  ctx.restore();
+  return canvas;
+}
+
 async function scanWithZXing() {
   if (!window.ZXing) await loadScript('vendor/zxing-0.21.3.min.js');
-  const { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } = window.ZXing;
-  // Nur Produkt-Barcodes. TRY_HARDER bleibt aus: im Videostream verhindert es
-  // in dieser ZXing-Version jede Erkennung.
-  const hints = new Map([
+  const { MultiFormatReader, BinaryBitmap, HybridBinarizer,
+          HTMLCanvasElementLuminanceSource, DecodeHintType, BarcodeFormat } = window.ZXing;
+
+  const reader = new MultiFormatReader();
+  reader.setHints(new Map([
     [DecodeHintType.POSSIBLE_FORMATS, [
       BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
       BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.CODE_128
     ]]
-  ]);
-  zxingReader = new BrowserMultiFormatReader(hints, 200);
-  els.video.srcObject = null;
-  await zxingReader.decodeFromStream(stream, els.video, (result) => {
-    if (result) onDetected(result.getText());
-  });
+  ]));
+
+  const read = (canvas) => {
+    try {
+      const source = new HTMLCanvasElementLuminanceSource(canvas);
+      return reader.decodeWithState(new BinaryBitmap(new HybridBinarizer(source)));
+    } catch (_) {
+      return null;               // kein Code in diesem Frame
+    } finally {
+      reader.reset();
+    }
+  };
+
+  let turn = 0, lastRun = 0;
+  const tick = (now) => {
+    if (!stream) return;
+    if (now - lastRun > 70) {
+      lastRun = now;
+      const canvas = grabFrame(ANGLES[turn]);
+      const hit = canvas && read(canvas);
+      if (hit) { onDetected(hit.getText()); return; }
+      turn = (turn + 1) % ANGLES.length;
+    }
+    if (stream) detectLoop = requestAnimationFrame(tick);
+  };
+  detectLoop = requestAnimationFrame(tick);
 }
 
 async function scanWithNativeDetector() {
@@ -462,16 +509,17 @@ async function scanWithNativeDetector() {
   const formats = FORMATS.filter((f) => supported.includes(f));
   if (!formats.length) return scanWithZXing();
 
-  els.video.srcObject = stream;
-  await els.video.play();
-
   const detector = new window.BarcodeDetector({ formats });
+  let turn = 0;
   const tick = async () => {
     if (!stream) return;
     try {
-      const hits = await detector.detect(els.video);
+      const angle = ANGLES[turn];
+      const target = angle === 0 ? els.video : grabFrame(angle);
+      const hits = target ? await detector.detect(target) : null;
       if (hits && hits.length) { onDetected(hits[0].rawValue); return; }
     } catch (_) { /* einzelne Frames dürfen fehlschlagen */ }
+    turn = (turn + 1) % ANGLES.length;
     if (stream) detectLoop = requestAnimationFrame(tick);
   };
   detectLoop = requestAnimationFrame(tick);
@@ -494,6 +542,8 @@ async function startScan() {
   els.btnScan.classList.add('secondary');
   try {
     stream = await openCamera();
+    els.video.srcObject = stream;
+    await els.video.play();
     document.body.classList.add('scanning');
     setupTorch();
     if ('BarcodeDetector' in window) await scanWithNativeDetector();
