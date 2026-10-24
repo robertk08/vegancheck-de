@@ -163,13 +163,15 @@ function assess(product) {
       if (bad.length) reasons.push('Nicht vegan wegen: ' + bad.join(', ') + '.');
       if (maybeMeat.length && !mostlyVeg) reasons.push('Unklar, ob vegetarisch: ' + maybeMeat.join(', ') + '.');
     }
-  } else if (veganTag === 'unknown' && vegetarianTag === 'unknown' && ingredientsText(product)) {
+  } else if (veganTag === 'unknown' && vegetarianTag !== 'no' && ingredientsText(product)) {
     // Open Food Facts hat nicht analysiert – Zutatentext selbst prüfen.
     const local = RULES.analyze(ingredientsText(product));
     verdict = VERDICTS[local.level];
     if (local.level === 'unknown' && local.hits.every((h) => MOSTLY_PLANT.test(h.note) || MOSTLY_PLANT.test(h.text))) {
       verdict = VERDICTS.likely;
     }
+    // Aus einem Foto gelesen: Texterkennung kann Wörter verschlucken – nie mehr als „wahrscheinlich“.
+    if (verdict.key === 'vegan' && product._ocr && !product.ingredients_text) verdict = VERDICTS.likely;
     // Wein & Co.: Klärhilfen stehen nicht in der Zutatenliste
     if ((local.level === 'vegan' || local.level === 'unknown') && RULES.isFined(productTitle(product) + ' ' + (product.categories_tags || []).join(' '))) {
       verdict = Object.assign({}, VERDICTS.unknown, { sub: 'Klärung unbekannt' });

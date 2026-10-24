@@ -31,7 +31,7 @@ const SEARCH_HOSTS = ['https://world.openfoodfacts.org', 'https://de.openfoodfac
   'https://uk.openfoodfacts.org', 'https://at.openfoodfacts.org', 'https://ch.openfoodfacts.org'];
 
 const HISTORY_KEY = 'vc.history.v2';
-const CACHE_KEY = 'vc.products.v4';
+const CACHE_KEY = 'vc.products.v5';
 const CACHE_TTL = 7 * 24 * 3600 * 1000;
 const HISTORY_MAX = 300;
 
@@ -472,11 +472,13 @@ async function readPhoto(code, p, view) {
   p._ocrTried = true;
   try {
     if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
-    if (!ocrWorker) ocrWorker = await Tesseract.createWorker(['deu', 'eng']);
-    const url = p.image_ingredients_url.replace(/\.\d+\.jpg$/, '.full.jpg');
-    const { data } = await ocrWorker.recognize(url);
-    const text = cleanOcr(data.text || '');
-    if (text) { p._ocr = text; cacheWrite(code, p); }
+    if (!ocrWorker) ocrWorker = await Tesseract.createWorker(['deu', 'eng', 'fra']);
+    // Erst das mittlere Foto (400 px, schnell); nur wenn das nichts Brauchbares ergibt, das große.
+    for (const url of [p.image_ingredients_url, p.image_ingredients_url.replace(/\.\d+\.jpg$/, '.full.jpg')]) {
+      const { data } = await ocrWorker.recognize(url);
+      const text = cleanOcr(data.text || '');
+      if (text && plausibleOcr(text)) { p._ocr = text; cacheWrite(code, p); break; }
+    }
   } catch (_) { /* Foto nicht lesbar – Ergebnis bleibt */ }
   if (stack[stack.length - 1] !== view) return;
   if (p._ocr) renderProduct(sheetBody, view, code, p);
@@ -504,11 +506,21 @@ async function askSimilar(code, p, view) {
   } catch (_) { /* Suche überlastet – bleibt „Unklar“ */ }
 }
 
+/** Sieht der Text nach einer Zutatenliste aus – oder nach Kauderwelsch aus einer fremden Schrift? */
+function plausibleOcr(text) {
+  const commas = (text.match(/,/g) || []).length;
+  const words = text.split(/[^\p{L}]+/u).filter((w) => w.length >= 3);
+  const vowelish = words.filter((w) => /[aeiouäöüy]/i.test(w));
+  return commas >= 2 && words.length >= 4 && vowelish.length / words.length > 0.8 && RULES.knownWords(text) >= 2;
+}
+
 /** Nur den Teil ab „Zutaten:“ behalten, Nährwerte usw. abschneiden. */
 function cleanOcr(raw) {
   let t = raw.replace(/\s+/g, ' ');
-  const start = t.search(/(zutaten|ingredients|ingrédients)\s*:/i);
-  if (start >= 0) t = t.slice(start).replace(/^[^:]*:/, '');
+  // Ohne Überschrift „Zutaten:“ ist es meist die Nährwerttabelle – dann lieber nichts.
+  const start = t.search(/(zutaten|ingredients|ingrédients|ingredienti)\s*:/i);
+  if (start < 0) return '';
+  t = t.slice(start).replace(/^[^:]*:/, '');
   const end = t.search(/(nährwert|durchschnittlich|nutrition|mindestens haltbar|kann spuren)/i);
   if (end > 0) t = t.slice(0, end);
   t = t.trim();

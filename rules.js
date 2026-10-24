@@ -197,6 +197,14 @@ const RULES = (() => {
 
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
+  /** Wie viele bekannte Lebensmittelwörter stecken im Text? Für die Plausibilität gelesener Fotos. */
+  function knownWords(text) {
+    const t = text.toLowerCase();
+    const vocab = [...PLANT_FOODS, ...MEAT, ...DAIRY_EGG].filter((w) => w.length >= 4)
+      .concat(['wasser', 'water', 'zucker', 'sugar', 'salz', 'salt', 'mehl', 'flour', 'eau', 'sucre', 'farine', 'sel ']);
+    return new Set(vocab.filter((w) => t.includes(w))).size;
+  }
+
   const isFined = (name) => FINED.test(name.toLowerCase());
   const isComposite = (name) => COMPOSITE.test(name.toLowerCase());
 
@@ -207,5 +215,5 @@ const RULES = (() => {
     falseFriends: FALSE_FRIENDS.source, composite: COMPOSITE.source
   };
 
-  return { analyze, plantFood, isFined, isComposite, E, data };
+  return { analyze, plantFood, isFined, isComposite, knownWords, E, data };
 })();
