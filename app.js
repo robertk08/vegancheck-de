@@ -297,7 +297,7 @@ function closeSheet() {
     sheet.classList.remove('closing');
     sheet.style.transform = '';
     sheet.close();
-    sheet.classList.remove('half');
+    sheet.classList.remove('half', 'expanded');
     document.body.classList.remove('sheet-open', 'has-result');
     shownCode = '';
     stack.length = 0;
@@ -307,6 +307,10 @@ function closeSheet() {
 }
 
 $('#sheet-close').addEventListener('click', closeSheet);
+// Tippen auf die Titelleiste schaltet das halbe Sheet zwischen halb und groß
+$('.sheet-bar').addEventListener('click', (e) => {
+  if (!e.target.closest('button') && sheet.classList.contains('half')) sheet.classList.toggle('expanded');
+});
 $('#sheet-back').addEventListener('click', () => { stack.pop(); showView(stack[stack.length - 1]); });
 sheet.addEventListener('cancel', (e) => { e.preventDefault(); closeSheet(); });
 sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); });
@@ -324,6 +328,11 @@ sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); }
     if (startY === null) return;
     sheet.classList.remove('dragging');
     startY = null;
+    if (sheet.classList.contains('half') && sheet.classList.contains('expanded') && dy > 110) {
+      sheet.classList.remove('expanded');          // groß → halb
+      sheet.style.transform = '';
+      return;
+    }
     if (dy > 110) closeSheet();
     else { sheet.style.transition = 'transform .35s var(--ease)'; sheet.style.transform = ''; setTimeout(() => { sheet.style.transition = ''; }, 360); }
   };
@@ -333,6 +342,10 @@ sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); }
   sheetBody.addEventListener('touchstart', (e) => { if (sheetBody.scrollTop <= 0) begin(e.touches[0].clientY); }, { passive: true });
   sheet.addEventListener('touchmove', (e) => {
     if (startY === null) return;
+    // Nach oben ziehen vergrößert das halbe Sheet
+    if (sheet.classList.contains('half') && startY - e.touches[0].clientY > 50) {
+      sheet.classList.add('expanded'); sheet.classList.remove('dragging'); startY = null; return;
+    }
     if (e.touches[0].clientY < startY && dy === 0) { sheet.classList.remove('dragging'); startY = null; return; }
     move(e.touches[0].clientY);
   }, { passive: true });
@@ -769,8 +782,10 @@ const frame = document.createElement('canvas');
 function grab(angle) {
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return null;
-  // Nur den mittleren Bereich lesen – schneller und weniger Fehltreffer.
-  const cw = vw * 0.86, ch = vh * 0.6, sx = (vw - cw) / 2, sy = (vh - ch) / 2;
+  // Nur den Bereich um den Rahmen lesen – schneller und weniger Fehltreffer.
+  // Bei offenem Ergebnis sitzt der Rahmen in der oberen Hälfte.
+  const upper = document.body.classList.contains('has-result');
+  const cw = vw * 0.86, ch = vh * (upper ? 0.42 : 0.6), sx = (vw - cw) / 2, sy = upper ? vh * 0.04 : (vh - ch) / 2;
   const scale = Math.min(1, 720 / Math.max(cw, ch));
   const w = Math.round(cw * scale), h = Math.round(ch * scale);
   frame.width = angle === 90 ? h : w;
@@ -802,7 +817,7 @@ function closeScanner() {
   }
   $('#btn-torch').hidden = true;
   torchTrack = null;
-  if (loop) { cancelAnimationFrame(loop); loop = null; }
+  if (loop) { clearTimeout(loop); loop = null; }
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
   video.srcObject = null;
 }
@@ -838,11 +853,10 @@ async function zxingLoop() {
   reader.setHints(new Map([[Z.DecodeHintType.POSSIBLE_FORMATS, [
     Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E,
     Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.ITF]]]));
-  let turn = 0, last = 0;
-  const tick = (now) => {
+  let turn = 0;
+  const tick = () => {
     if (!stream) return;
-    if (now - last > 40) {
-      last = now;
+    {
       const c = grab(ANGLES[turn]);
       if (c) {
         try {
@@ -852,9 +866,9 @@ async function zxingLoop() {
       }
       turn = (turn + 1) % ANGLES.length;
     }
-    loop = requestAnimationFrame(tick);
+    loop = setTimeout(tick, 40);
   };
-  loop = requestAnimationFrame(tick);
+  loop = setTimeout(tick, 40);
 }
 
 async function nativeLoop() {
@@ -871,9 +885,9 @@ async function nativeLoop() {
       if (hits.length && detected(hits[0].rawValue)) return;
     } catch (_) {}
     turn = (turn + 1) % ANGLES.length;
-    if (stream) loop = requestAnimationFrame(tick);
+    if (stream) loop = setTimeout(tick, 40);
   };
-  loop = requestAnimationFrame(tick);
+  loop = setTimeout(tick, 40);
 }
 
 async function openScanner() {

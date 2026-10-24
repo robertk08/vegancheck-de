@@ -286,7 +286,9 @@ footer a { color: inherit; }
   flex-direction: column;
 }
 .sheet[open] { display: flex; animation: sheet-in .5s var(--ease); }
-.sheet.half { z-index: 30; height: 58dvh; box-shadow: 0 -10px 40px rgba(0, 0, 0, .35); }
+.sheet.half { z-index: 30; height: 58dvh; box-shadow: 0 -10px 40px rgba(0, 0, 0, .35); transition: height .4s var(--ease); }
+.sheet.half.expanded { height: calc(100dvh - env(safe-area-inset-top) - 10px); }
+.sheet.half .sheet-bar { cursor: pointer; }
 @media (min-width: 700px) { .sheet.half { inset: auto 0 0; border-radius: 32px 32px 0 0; height: 58dvh; } }
 .sheet.closing { animation: sheet-out .3s var(--ease) forwards; }
 .sheet.dragging { animation: none; transition: none; }
