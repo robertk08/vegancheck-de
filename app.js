@@ -1,525 +1,191 @@
-/* VeganCheck – Barcode scannen, Ergebnis: vegan / vegetarisch / keins von beidem.
-   Daten: Open Food Facts (ODbL). Läuft vollständig im Browser. */
+/* VeganCheck – Barcode scannen, sofort sehen: vegan, vegetarisch oder keins von beidem.
+   Daten: Open Food Facts & Schwesterprojekte (ODbL), USDA FoodData Central.
+   Läuft vollständig im Browser; Verlauf und Zwischenspeicher bleiben auf dem Gerät. */
 'use strict';
 
-// Lebensmittel zuerst; Kosmetik, Tierfutter und sonstige Produkte als Rückfall.
-const SOURCES = [
-  { hosts: ['https://world.openfoodfacts.org', 'https://de.openfoodfacts.org'], name: 'Open Food Facts', site: 'https://de.openfoodfacts.org' },
+/* ================================================================== Daten */
+
+const FIELDS = [
+  'code', 'product_name', 'product_name_de', 'brands', 'quantity',
+  'image_front_small_url', 'image_front_url',
+  'labels_tags', 'ingredients_analysis_tags', 'ingredients',
+  'ingredients_text_de', 'ingredients_text',
+  'nutriments', 'allergens_tags', 'traces_tags',
+  'nutriscore_grade', 'nova_group', 'categories_tags', 'categories_hierarchy'
+].join(',');
+const LIST_FIELDS = 'code,product_name,product_name_de,brands,quantity,image_front_small_url,labels_tags,ingredients_analysis_tags';
+
+// Lebensmittel zuerst; die anderen nur, wenn dort nichts liegt.
+const FOOD = { hosts: ['https://world.openfoodfacts.org', 'https://de.openfoodfacts.org'], name: 'Open Food Facts', site: 'https://de.openfoodfacts.org' };
+const OTHER_SOURCES = [
   { hosts: ['https://world.openbeautyfacts.org'], name: 'Open Beauty Facts', site: 'https://de.openbeautyfacts.org' },
   { hosts: ['https://world.openpetfoodfacts.org'], name: 'Open Pet Food Facts', site: 'https://de.openpetfoodfacts.org' },
   { hosts: ['https://world.openproductsfacts.org'], name: 'Open Products Facts', site: 'https://de.openproductsfacts.org' }
 ];
-const FIELDS = [
-  'code', 'product_name', 'product_name_de', 'brands', 'quantity',
-  'image_front_small_url', 'image_small_url',
-  'labels_tags', 'ingredients_analysis_tags', 'ingredients',
-  'ingredients_text_de', 'ingredients_text',
-  'nutriments', 'nutrition_data_per', 'serving_size',
-  'allergens_tags', 'traces_tags', 'nutriscore_grade', 'nova_group', 'ecoscore_grade',
-  'categories_tags', 'categories_hierarchy'
-].join(',');
-const SEARCH = 'https://de.openfoodfacts.org/cgi/search.pl';
-const LIST_FIELDS = 'code,product_name,product_name_de,brands,quantity,image_front_small_url,labels_tags,ingredients_analysis_tags';
+// USDA FoodData Central: Markenprodukte aus den USA (Importware), mit Zutatenliste.
+// DEMO_KEY ist stark limitiert – eigener kostenloser Schlüssel: https://fdc.nal.usda.gov/api-key-signup
+const USDA_KEY = 'DEMO_KEY';
+// Ältere Suche von Open Food Facts; die Server lehnen unter Last oft ab, daher mehrere.
+const SEARCH_HOSTS = ['https://world.openfoodfacts.org', 'https://de.openfoodfacts.org', 'https://fr.openfoodfacts.org',
+  'https://uk.openfoodfacts.org', 'https://at.openfoodfacts.org', 'https://ch.openfoodfacts.org'];
+
 const HISTORY_KEY = 'vc.history.v2';
-const OLD_HISTORY_KEY = 'vc.history.v1';
-const SETTINGS_KEY = 'vc.settings.v1';
+const CACHE_KEY = 'vc.products.v4';
+const CACHE_TTL = 7 * 24 * 3600 * 1000;
 const HISTORY_MAX = 300;
-const CACHE_KEY = 'vc.products.v3';
-const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
-const $ = (sel) => document.querySelector(sel);
-const els = {
-  video: $('#video'), camHint: $('#cam-hint'), btnScan: $('#btn-scan'),
-  btnTorch: $('#btn-torch'),
-  form: $('#manual-form'), input: $('#manual-code'), result: $('#result'),
-  recent: $('#recent'), recentWrap: $('#recent-wrap'),
-  history: $('#history'), historyEmpty: $('#history-empty'), stats: $('#stats'),
-  continuous: $('#opt-continuous'), toast: $('#toast'),
-  dialog: $('#info-dialog'), btnInfo: $('#btn-info'), btnCloseInfo: $('#btn-close-info')
-};
-
-/* ---------------------------------------------------------------- Einstufung */
-
-const GLYPHS = {
-  check: '<path d="M4.8 12.9 9.6 17.7 19.2 6.9"/>',
-  bang:  '<path d="M12 5.4v8.2"/><circle cx="12" cy="18.1" r="1.35" class="fill"/>',
-  cross: '<path d="M6.4 6.4 17.6 17.6M17.6 6.4 6.4 17.6"/>',
-  query: '<path d="M8.7 8.9a3.4 3.4 0 1 1 4.4 3.9c-.8.3-1.2 1-1.2 1.9v.5"/>'
-         + '<circle cx="12" cy="18.4" r="1.35" class="fill"/>'
-};
-
-const VERDICTS = {
-  vegan: {
-    key: 'vegan', cls: 'v-vegan', glyph: GLYPHS.check,
-    title: 'Vegan', sub: ''
-  },
-  vegetarian: {
-    key: 'vegetarian', cls: 'v-vegetarian', glyph: GLYPHS.bang,
-    title: 'Vegetarisch', sub: 'Nicht vegan'
-  },
-  no: {
-    key: 'no', cls: 'v-no', glyph: GLYPHS.cross,
-    title: 'Nicht vegetarisch', sub: 'Auch nicht vegan'
-  },
-  likely: {
-    key: 'likely', cls: 'v-likely', glyph: GLYPHS.check,
-    title: 'Wahrscheinlich vegan', sub: 'Keine tierischen Zutaten erkennbar'
-  },
-  unknown: {
-    key: 'unknown', cls: 'v-unknown', glyph: GLYPHS.query,
-    title: 'Unklar', sub: 'Zutaten nicht eindeutig'
-  }
-};
-
-/* Zutaten, die Open Food Facts als „vielleicht tierisch“ markiert, die in
-   Deutschland aber fast immer pflanzlich sind. Sind nur solche im Spiel,
-   lautet das Ergebnis „Wahrscheinlich vegan“ statt „Unklar“. */
-const MOSTLY_PLANT = /aroma|aromen|flavou?r|lecithin|e ?322|emulgator|emulsifier|mono- und diglyceride|mono- and diglycerides|e ?471|zucker|sugar|wein|wine|essig|vinegar|vitamin|glycerin|e ?422|stearinsäure|stearic|e ?570|farbstoff|colou?r|säuerungsmittel|acidity|trennmittel|überzugsmittel|glazing/i;
-
-/* Kategorien als Rückfall, wenn es keine Zutatenliste gibt. */
-const CAT_NO = /^en:(meats?|.*-meats?|sausages|hams|poultry|fishes|seafood|.*-fish|fish-.*|gelatin|charcuterie|.*-sausages|bacon|.*-broths-of-meat)$/;
-const CAT_VEG = /^en:(dairies|milks?|cheeses|.*-cheeses|yogurts|butters|creams|eggs|honeys|.*-honeys|dairy-desserts|milk-chocolates|ice-creams)$/;
-const CAT_PLANT = /^en:(fruits|vegetables|.*-vegetables|fresh-fruits|legumes|plant-based-.*|cereals-and-potatoes|pastas|rices|nuts|seeds|vegetable-oils|olive-oils|.*-oils|sugars|coffees|teas|waters|.*-waters|fruit-juices|juices|.*-juices|soft-drinks|flours|spices|salts|jams|meat-alternatives|dark-chocolates|tofu|breads)$/;
-
-function categoryHint(product) {
-  const cats = product.categories_tags || [];
-  if (cats.some((c) => CAT_NO.test(c))) return 'no';
-  if (cats.some((c) => CAT_VEG.test(c))) return 'vegetarian';
-  if (cats.some((c) => CAT_PLANT.test(c))) return 'likely';
-  return null;
-}
-
-const glyphMarkup = (paths) =>
-  `<div class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg></div>`;
-
-const has = (list, tag) => Array.isArray(list) && list.includes(tag);
-
-/** Flache Liste aller (auch verschachtelten) Zutaten. */
-function flatten(ingredients, out = []) {
-  if (!Array.isArray(ingredients)) return out;
-  for (const ing of ingredients) {
-    out.push(ing);
-    if (ing.ingredients) flatten(ing.ingredients, out);
-  }
-  return out;
-}
-
-/** Zutaten mit einem bestimmten Status ('no' | 'maybe'), ohne Dubletten. */
-function ingredientsWith(product, field, status) {
-  const seen = new Set();
-  const names = [];
-  for (const ing of flatten(product.ingredients)) {
-    if (ing[field] !== status) continue;
-    // Übergeordnete Zutat genügt – verschachtelte Unterzutaten nicht doppelt nennen.
-    const name = (ing.text || ing.id || '').replace(/^[a-z]{2}:/, '').trim();
-    if (!name) continue;
-    const norm = name.toLowerCase();
-    if (seen.has(norm)) continue;
-    seen.add(norm);
-    names.push(name.charAt(0).toUpperCase() + name.slice(1));
-  }
-  return names.slice(0, 8);
-}
-
-/**
- * Bewertet ein Produkt.
- * Reihenfolge: zertifizierte Siegel schlagen die automatische Zutatenanalyse.
- */
-function assess(product) {
-  const labels = product.labels_tags || [];
-  const tags = product.ingredients_analysis_tags || [];
-
-  const veganLabel = has(labels, 'en:vegan');
-  const vegetarianLabel = has(labels, 'en:vegetarian') || has(labels, 'en:european-vegetarian-union');
-
-  const veganTag = has(tags, 'en:vegan') ? 'yes'
-    : has(tags, 'en:non-vegan') ? 'no'
-    : has(tags, 'en:maybe-vegan') ? 'maybe' : 'unknown';
-  const vegetarianTag = has(tags, 'en:vegetarian') ? 'yes'
-    : has(tags, 'en:non-vegetarian') ? 'no'
-    : has(tags, 'en:maybe-vegetarian') ? 'maybe' : 'unknown';
-
-  const reasons = [];
-  let verdict;
-
-  if (veganLabel) {
-    verdict = VERDICTS.vegan;
-    reasons.push('Als vegan gekennzeichnet.');
-  } else if (veganTag === 'yes') {
-    verdict = VERDICTS.vegan;
-    reasons.push('Alle Zutaten sind pflanzlich.');
-  } else if (veganTag === 'no') {
-    const bad = ingredientsWith(product, 'vegan', 'no');
-    if (vegetarianTag === 'no') {
-      verdict = VERDICTS.no;
-      const meat = ingredientsWith(product, 'vegetarian', 'no');
-      if (meat.length) reasons.push('Nicht vegetarisch wegen: ' + meat.join(', ') + '.');
-    } else if (vegetarianTag === 'yes' || vegetarianLabel) {
-      verdict = VERDICTS.vegetarian;
-      if (bad.length) reasons.push('Nicht vegan wegen: ' + bad.join(', ') + '.');
-    } else {
-      verdict = Object.assign({}, VERDICTS.vegetarian, {
-        title: 'Nicht vegan', sub: 'Vegetarisch unklar'
-      });
-      if (bad.length) reasons.push('Nicht vegan wegen: ' + bad.join(', ') + '.');
-      const named = new Set(bad.map((n) => n.toLowerCase()));
-      const maybeMeat = ingredientsWith(product, 'vegetarian', 'maybe')
-        .filter((n) => !named.has(n.toLowerCase()));
-      if (maybeMeat.length) reasons.push('Unklar: ' + maybeMeat.join(', ') + '.');
-    }
-  } else if (veganTag === 'unknown' && vegetarianTag === 'unknown' && ingredientsText(product)) {
-    // Open Food Facts hat nicht analysiert – Zutatentext selbst prüfen.
-    const local = RULES.analyze(ingredientsText(product));
-    verdict = VERDICTS[local.level];
-    if (local.level === 'unknown' && local.hits.every((h) => MOSTLY_PLANT.test(h.note) || MOSTLY_PLANT.test(h.text))) {
-      verdict = VERDICTS.likely;
-    }
-    const names = (lvl) => local.hits.filter((h) => h.level === lvl).map((h) => h.text).slice(0, 8);
-    if (local.level === 'vegan') reasons.push('Keine tierischen Zutaten im Zutatentext gefunden.');
-    if (names('no').length) reasons.push('Nicht vegetarisch wegen: ' + names('no').join(', ') + '.');
-    if (names('veg').length) reasons.push('Nicht vegan wegen: ' + names('veg').join(', ') + '.');
-    if (names('maybe').length) reasons.push('Nicht eindeutig: ' + names('maybe').join(', ') + '.');
-    reasons.push('Eigene Auswertung des Zutatentexts.');
-  } else {
-    // vegan 'maybe' oder gar keine Analyse
-    const maybe = ingredientsWith(product, 'vegan', 'maybe');
-    if (vegetarianTag === 'no') {
-      verdict = VERDICTS.no;
-      const meat = ingredientsWith(product, 'vegetarian', 'no');
-      if (meat.length) reasons.push('Nicht vegetarisch wegen: ' + meat.join(', ') + '.');
-    } else {
-      verdict = Object.assign({}, VERDICTS.unknown, {
-        sub: vegetarianTag === 'yes' || vegetarianLabel ? 'Vegetarisch, vegan unklar' : VERDICTS.unknown.sub
-      });
-      const hint = categoryHint(product);
-      const nameVegan = /\bvegan/i.test(productTitle(product));
-      if (maybe.length && maybe.every((m) => MOSTLY_PLANT.test(m)) && vegetarianTag !== 'maybe') {
-        verdict = VERDICTS.likely;
-        reasons.push('Nur ' + maybe.join(', ') + ' könnte tierisch sein – ist aber fast immer pflanzlich.');
-      } else if (!(product.ingredients || []).length && (hint || nameVegan)) {
-        // Keine Zutaten: Name oder Kategorie geben den Ausschlag.
-        const k = nameVegan ? 'likely' : hint;
-        verdict = VERDICTS[k];
-        reasons.push(nameVegan ? '„Vegan“ steht im Produktnamen.' : 'Abgeleitet aus der Produktkategorie.');
-        reasons.push('Keine Zutatenliste hinterlegt – im Zweifel Verpackung prüfen.');
-      } else if (maybe.length) {
-        reasons.push('Nicht eindeutig: ' + maybe.join(', ') + ' – kann tierisch oder pflanzlich sein.');
-      } else if (!(product.ingredients || []).length) {
-        reasons.push('Keine Zutatenliste hinterlegt.');
-      } else {
-        reasons.push('Zutatenliste nicht vollständig auswertbar.');
-      }
-    }
-  }
-
-  return { verdict, reasons, veganLabel };
-}
-
-/* ------------------------------------------------------------------ Abfrage */
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const timeout = (ms) => (AbortSignal.timeout ? AbortSignal.timeout(ms) : undefined);
 
 function cacheRead(code) {
   try {
-    const all = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
-    const hit = all[code];
+    const hit = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}')[code];
     if (hit && Date.now() - hit.t < CACHE_TTL) return hit.p;
   } catch (_) {}
   return null;
 }
-
 function cacheWrite(code, product) {
   try {
     const all = JSON.parse(localStorage.getItem(CACHE_KEY) || '{}');
     all[code] = { t: Date.now(), p: product };
     const keys = Object.keys(all);
-    if (keys.length > 120) {
-      keys.sort((a, b) => all[a].t - all[b].t).slice(0, keys.length - 120)
-        .forEach((k) => delete all[k]);
-    }
+    if (keys.length > 150) keys.sort((a, b) => all[a].t - all[b].t).slice(0, keys.length - 150).forEach((k) => delete all[k]);
     localStorage.setItem(CACHE_KEY, JSON.stringify(all));
   } catch (_) {}
 }
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+class Busy extends Error {}
 
-/** Eine Quelle abfragen. Bei Überlastung (429/503) mit Pause erneut, abwechselnd über die Hosts. */
-async function lookup(source, code) {
-  let lastErr;
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const host = source.hosts[attempt % source.hosts.length];
+/** Eine Open-*-Facts-Quelle. Bei Überlastung (429/5xx/Netz) sofort über den zweiten Host, dann mit kurzer Pause. */
+async function offLookup(source, code) {
+  const waits = [0, 0, 500, 1400];
+  for (let i = 0; i < waits.length; i++) {
+    if (waits[i]) await sleep(waits[i]);
+    const host = source.hosts[i % source.hosts.length];
     try {
-      const res = await fetch(`${host}/api/v2/product/${encodeURIComponent(code)}.json?lc=de&cc=de&fields=${FIELDS}`,
-        { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined });
+      const res = await fetch(`${host}/api/v2/product/${code}.json?lc=de&cc=de&fields=${FIELDS}`, { signal: timeout(i < 2 ? 5000 : 8000) });
       if (res.status === 404) return null;
-      if (res.status === 429 || res.status >= 500) throw new Error('HTTP ' + res.status);
+      if (res.status === 429 || res.status >= 500) continue;
       if (!res.ok) return null;
       const data = await res.json();
       if (!data || data.status === 0 || !data.product) return null;
-      data.product._source = source.name;
-      data.product._site = source.site;
-      return data.product;
-    } catch (err) {
-      lastErr = err;
-      await sleep([400, 1200, 2500, 0][attempt]);
-    }
+      return Object.assign(data.product, { code: data.product.code || code, _source: source.name, _site: source.site });
+    } catch (_) { /* Netz oder Zeitüberschreitung: nächster Versuch */ }
   }
-  throw lastErr;
+  throw new Busy(source.name);
 }
 
-/** Codes, unter denen ein Produkt liegen kann (UPC-A ↔ EAN-13, EAN-13 mit führender Null). */
+/** USDA: sucht im Feld gtinUpc; dort liegen Codes mal mit, mal ohne führende Nullen. */
+async function usdaLookup(code) {
+  const bare = code.replace(/^0+/, '');
+  const forms = [...new Set([bare.padStart(12, '0'), bare.padStart(13, '0'), bare.padStart(14, '0'), bare])];
+  const q = forms.map((f) => `gtinUpc:${f}`).join(' OR ');
+  const res = await fetch(`https://api.nal.usda.gov/fdc/v1/foods/search?dataType=Branded&pageSize=1&api_key=${USDA_KEY}&query=${encodeURIComponent(q)}`, { signal: timeout(7000) });
+  if (!res.ok) throw new Busy('USDA');
+  const f = ((await res.json()).foods || [])[0];
+  if (!f || f.gtinUpc.replace(/^0+/, '') !== bare) return null;
+  const title = (s) => String(s || '').toLowerCase().replace(/(^|[\s-])\p{L}/gu, (m) => m.toUpperCase());
+  return {
+    code, product_name: title(f.description), brands: title(f.brandName || f.brandOwner),
+    quantity: f.packageWeight || '', ingredients_text: (f.ingredients || '').toLowerCase(),
+    categories_tags: [], _source: 'USDA FoodData Central', _site: `https://fdc.nal.usda.gov/food-details/${f.fdcId}/details`
+  };
+}
+
+/** Codes, unter denen dasselbe Produkt liegen kann (UPC-A ↔ EAN-13, führende Nullen). */
 function variants(code) {
-  const v = [code];
-  if (code.length === 12) v.push('0' + code);
-  if (code.length === 13 && code.startsWith('0')) v.push(code.slice(1));
-  if (code.length === 14 && code.startsWith('0')) v.push(code.slice(1));
-  return v;
+  const v = new Set([code]);
+  if (code.length === 12) v.add('0' + code);
+  if (/^0/.test(code) && code.length >= 13) v.add(code.slice(1));
+  if (code.length === 8) v.add(code.padStart(13, '0'));
+  return [...v];
 }
 
-async function fetchProduct(code) {
+/** Erstes Ergebnis ≠ null aus mehreren parallel laufenden Abfragen. */
+function firstFound(promises) {
+  return new Promise((resolve, reject) => {
+    let pending = promises.length, failed = 0;
+    if (!pending) resolve(null);
+    for (const p of promises) {
+      p.then((r) => { if (r) resolve(r); }, () => { failed++; })
+        .finally(() => { if (--pending === 0) failed === promises.length ? reject(new Busy('alle')) : resolve(null); });
+    }
+  });
+}
+
+const inflight = new Map();
+
+/** Produkt zu einem Barcode – erst Cache, dann Open Food Facts, dann alle anderen Quellen gleichzeitig. */
+function fetchProduct(code) {
   const cached = cacheRead(code);
-  if (cached) return cached;
+  if (cached) return Promise.resolve(cached);
+  if (inflight.has(code)) return inflight.get(code);
 
-  let failures = 0;
-  for (const source of SOURCES) {
-    for (const c of variants(code)) {
-      try {
-        const product = await lookup(source, c);
-        if (product) { cacheWrite(code, product); return product; }
-      } catch (_) { failures++; }
-    }
+  const job = (async () => {
+    let busy = false;
+    try {
+      const p = await offLookup(FOOD, code);
+      if (p) return p;
+    } catch (_) { busy = true; }
+
+    const more = [
+      ...variants(code).slice(1).map((c) => offLookup(FOOD, c)),
+      ...OTHER_SOURCES.map((s) => offLookup(s, code)),
+      usdaLookup(code)
+    ];
+    try {
+      const p = await firstFound(more);
+      if (p || !busy) return p;
+    } catch (_) { /* alles überlastet */ }
+    throw new Busy('offline');
+  })();
+
+  inflight.set(code, job);
+  job.then((p) => { if (p) cacheWrite(code, p); }, () => {}).finally(() => inflight.delete(code));
+  return job;
+}
+
+/** Produktsuche: Server der Reihe nach, bis einer antwortet. */
+const searchCache = new Map();
+async function searchProducts(terms, tags = [], size = 24, signal) {
+  const key = JSON.stringify([terms, tags, size]);
+  if (searchCache.has(key)) return searchCache.get(key);
+  let qs = `?action=process&json=1&page_size=${size}&sort_by=unique_scans_n&fields=${LIST_FIELDS}`;
+  if (terms) qs += `&search_simple=1&search_terms=${encodeURIComponent(terms)}`;
+  tags.forEach(([type, value], i) => { qs += `&tagtype_${i}=${type}&tag_contains_${i}=contains&tag_${i}=${encodeURIComponent(value)}`; });
+
+  for (const [i, host] of SEARCH_HOSTS.entries()) {
+    if (signal && signal.aborted) throw new DOMException('abgebrochen', 'AbortError');
+    try {
+      const res = await fetch(`${host}/cgi/search.pl${qs}`, { signal: signal || timeout(6000) });
+      if (res.ok) {
+        const list = (await res.json()).products || [];
+        searchCache.set(key, list);
+        return list;
+      }
+    } catch (err) { if (err.name === 'AbortError' && signal && signal.aborted) throw err; }
+    await sleep(i < 2 ? 150 : 400);
   }
-  if (failures) throw new Error('offline');
-  return null;
+  throw new Busy('Suche');
 }
 
-/* ----------------------------------------------------------------- Ausgabe */
-
-const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
-  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-function productTitle(p) {
-  return p.product_name_de || p.product_name || 'Unbekanntes Produkt';
-}
-
-function renderLoading(code) {
-  els.result.hidden = false;
-  els.result.innerHTML =
-    `<div class="spinner-box"><div class="spinner"></div>Wird geprüft …</div>`;
-  els.result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function renderMessage(title, body) {
-  els.result.hidden = false;
-  els.result.innerHTML = `
-    <div class="verdict v-unknown">
-      ${glyphMarkup(GLYPHS.query)}
-      <h2>${esc(title)}</h2>
-      <p class="sub">${body}</p>
-    </div>`;
-  els.result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function renderProduct(code, product) {
-  const { verdict, reasons, veganLabel } = assess(product);
-  const img = product.image_front_small_url || product.image_small_url || '';
-  const meta = [product.brands, product.quantity].filter(Boolean).join(' · ');
-
-  els.result.hidden = false;
-  els.result.innerHTML = `
-    <div class="verdict ${verdict.cls}">
-      ${glyphMarkup(verdict.glyph)}
-      <h2>${esc(verdict.title)}</h2>
-      ${verdict.sub ? `<p class="sub">${esc(verdict.sub)}</p>` : ''}
-      ${veganLabel ? '<span class="badge">Vegan gekennzeichnet</span>' : ''}
-    </div>
-    <div class="product">
-      ${img ? `<img src="${esc(img)}" alt="" loading="lazy">` : ''}
-      <div>
-        <div class="name">${esc(productTitle(product))}</div>
-        <div class="meta">${esc(meta || 'Barcode ' + code)}</div>
-        ${product._source && product._source !== 'Open Food Facts' ? `<div class="meta">Quelle: ${esc(product._source)}</div>` : ''}
-      </div>
-    </div>
-    ${reasons.length ? `<div class="why">
-      <ul>${reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>
-    </div>` : ''}
-    ${scoresMarkup(product)}
-    <div class="actions">
-      <button type="button" class="secondary" data-act="fav" data-code="${esc(code)}" aria-pressed="${isFav(code)}">${isFav(code) ? '★ Gemerkt' : '☆ Merken'}</button>
-      <button type="button" class="secondary" data-act="share" data-code="${esc(code)}">Teilen</button>
-      <a class="secondary btn-link" href="${esc(product._site || 'https://de.openfoodfacts.org')}/produkt/${encodeURIComponent(code)}" target="_blank" rel="noopener">Bearbeiten</a>
-    </div>
-    ${detailsMarkup(product)}
-    <div class="alts" id="alts" hidden></div>`;
-
-  els.result.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  addHistory(code, productTitle(product), verdict.key, product);
-  if (verdict.key !== 'vegan') loadAlternatives(product);
-}
-
-/* ---------------------------------------------------- Scores & Allergene */
-
-const ALLERGENS = {
-  'en:milk': 'Milch', 'en:eggs': 'Ei', 'en:gluten': 'Gluten', 'en:nuts': 'Schalenfrüchte',
-  'en:peanuts': 'Erdnüsse', 'en:soybeans': 'Soja', 'en:fish': 'Fisch', 'en:crustaceans': 'Krebstiere',
-  'en:molluscs': 'Weichtiere', 'en:celery': 'Sellerie', 'en:mustard': 'Senf',
-  'en:sesame-seeds': 'Sesam', 'en:sulphur-dioxide-and-sulphites': 'Sulfite', 'en:lupin': 'Lupine'
-};
-const allergenNames = (tags) => (tags || []).map((t) => ALLERGENS[t] || t.replace(/^[a-z]{2}:/, '')).filter(Boolean);
-
-function scoresMarkup(p) {
-  const chips = [];
-  const ns = (p.nutriscore_grade || '').toLowerCase();
-  if (/^[a-e]$/.test(ns)) chips.push(`<span class="score ns-${ns}" title="Nutri-Score">Nutri-Score <b>${ns.toUpperCase()}</b></span>`);
-  if (p.nova_group) chips.push(`<span class="score nova-${p.nova_group}" title="Verarbeitungsgrad">NOVA <b>${esc(p.nova_group)}</b></span>`);
-  const eco = (p.ecoscore_grade || '').toLowerCase();
-  if (/^[a-e]$/.test(eco)) chips.push(`<span class="score ns-${eco}" title="Umwelt">Eco-Score <b>${eco.toUpperCase()}</b></span>`);
-  const al = allergenNames(p.allergens_tags);
-  const tr = allergenNames(p.traces_tags).filter((t) => !al.includes(t));
-  if (!chips.length && !al.length && !tr.length) return '';
-  return `<div class="why scores">
-    ${chips.length ? `<div class="score-row">${chips.join('')}</div>` : ''}
-    ${al.length ? `<p><b>Allergene:</b> ${esc(al.join(', '))}</p>` : ''}
-    ${tr.length ? `<p class="muted">Kann Spuren enthalten von: ${esc(tr.join(', '))}</p>` : ''}
-  </div>`;
-}
-
-/* ---------------------------------------------------------- Alternativen */
-
-async function loadAlternatives(product) {
-  // Spezifischste englische Kategorie; sonst nach dem Produktnamen suchen.
-  const cats = (product.categories_hierarchy || product.categories_tags || []).filter((c) => c.startsWith('en:'));
-  const cat = cats[cats.length - 1];
-  const box = $('#alts');
-  const name = (product.product_name_de || product.product_name || '').trim();
-  if (!box || (!cat && !name)) return;
-  try {
-    const tags = [['labels', 'en:vegan']];
-    if (cat) tags.push(['categories', cat]);
-    const data = await searchApi(cat ? '' : name, tags, 12);
-    const items = (data.products || []).filter((x) => x.code !== product.code).slice(0, 6);
-    if (!items.length || !box.isConnected) return;
-    box.hidden = false;
-    box.innerHTML = `<h3>Vegane Alternativen</h3><div class="alt-row">${items.map((x) => `
-      <button type="button" class="alt" data-code="${esc(x.code)}">
-        ${x.image_front_small_url ? `<img src="${esc(x.image_front_small_url)}" alt="" loading="lazy">` : '<span class="ph"></span>'}
-        <span>${esc(productTitle(x))}</span><small>${esc(x.brands || '')}</small>
-      </button>`).join('')}</div>`;
-  } catch (_) { /* Alternativen sind ein Extra */ }
-}
-
-let lastProduct = null;
-
-async function check(code) {
-  go('scan');
-  renderLoading(code);
-  try {
-    const product = await fetchProduct(code);
-    if (!product) {
-      renderMessage('Nicht gefunden',
-        `Kein Eintrag für ${esc(code)} – weder bei Lebensmitteln noch bei Kosmetik oder Tierfutter.<br><br>
-         <a href="#ingredients" data-ing-hint>Zutatenliste selbst prüfen</a> ·
-         <a href="https://de.openfoodfacts.org/cgi/product.pl?type=add&code=${encodeURIComponent(code)}"
-            target="_blank" rel="noopener">Produkt eintragen</a>`);
-      return;
-    }
-    renderProduct(code, product);
-    lastProduct = { code, product };
-  } catch (err) {
-    renderMessage('Datenbank überlastet',
-      `Open Food Facts antwortet gerade nicht. <a href="#" data-retry="${esc(code)}">Erneut versuchen</a>`);
-  }
-}
-
-/* ------------------------------------------------------------- Alle Daten */
-
-const NUM = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 });
-
-const NUTRIENTS = [
-  ['energy-kcal', 'Energie', 'kcal'],
-  ['fat', 'Fett', 'g'],
-  ['saturated-fat', 'davon gesättigte Fettsäuren', 'g'],
-  ['carbohydrates', 'Kohlenhydrate', 'g'],
-  ['sugars', 'davon Zucker', 'g'],
-  ['fiber', 'Ballaststoffe', 'g'],
-  ['proteins', 'Eiweiß', 'g'],
-  ['salt', 'Salz', 'g']
-];
-
-/** Nährwerte je 100 g, sonst je Portion – je nachdem, was hinterlegt ist. */
-function nutritionRows(product) {
-  const n = product.nutriments || {};
-  for (const [suffix, label] of [['_100g', 'je 100\u00a0g'], ['_serving', 'je Portion']]) {
-    const rows = NUTRIENTS
-      .filter(([key]) => typeof n[key + suffix] === 'number')
-      .map(([key, name, unit]) => ({
-        name,
-        value: NUM.format(n[key + suffix]) + '\u00a0' + unit,
-        sub: name.startsWith('davon')
-      }));
-    if (rows.length) return { rows, label };
-  }
-  return { rows: [], label: '' };
-}
-
-function ingredientsText(product) {
-  const text = product.ingredients_text_de || product.ingredients_text || '';
-  // Open Food Facts markiert Allergene mit Unterstrichen (_Milch_).
-  return text.replace(/_/g, '').replace(/\s+/g, ' ').trim();
-}
-
-function detailsMarkup(product) {
-  const { rows, label } = nutritionRows(product);
-  const text = ingredientsText(product);
-  if (!rows.length && !text) return '';
-
-  const nutrition = rows.length ? `
-    <h4>Nährwerte <span>${esc(label)}</span></h4>
-    <dl class="nutri">
-      ${rows.map((r) => `<div${r.sub ? ' class="sub"' : ''}>
-        <dt>${esc(r.name)}</dt><dd>${esc(r.value)}</dd></div>`).join('')}
-    </dl>` : '';
-
-  const ingredients = text ? `
-    <h4>Zutaten</h4>
-    <p class="ing">${esc(text)}</p>` : '';
-
-  return `
-    <details class="details">
-      <summary>
-        <span>Alle Daten</span>
-        <span class="chev" aria-hidden="true"><svg viewBox="0 0 7 12"><path d="M1 1l5 5-5 5"/></svg></span>
-      </summary>
-      <div class="details-body">${nutrition}${ingredients}</div>
-    </details>`;
-}
-
-/* ----------------------------------------------------------------- Verlauf */
+/* ================================================================ Verlauf */
 
 function loadHistory() {
-  try {
-    const list = JSON.parse(localStorage.getItem(HISTORY_KEY) || 'null');
-    if (list) return list;
-    // Alte Einträge (nur 8, ohne Zeit) übernehmen
-    return JSON.parse(localStorage.getItem(OLD_HISTORY_KEY) || '[]').map((e) => ({ ...e, t: Date.now() }));
-  } catch (_) { return []; }
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch (_) { return []; }
 }
 function saveHistory(list) {
   try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list.slice(0, HISTORY_MAX))); } catch (_) {}
+  renderRecent();
 }
-
-function addHistory(code, name, verdictKey, product) {
+function addHistory(code, product, v) {
   const all = loadHistory();
   const prev = all.find((e) => e.code === code);
-  const list = all.filter((e) => e.code !== code);
-  list.unshift({
-    code, name, v: verdictKey, t: Date.now(), fav: !!(prev && prev.fav),
-    brand: product && product.brands ? product.brands.split(',')[0] : '',
-    img: product ? product.image_front_small_url || '' : ''
-  });
-  saveHistory(list);
-  renderHistory();
+  saveHistory([{
+    code, name: productTitle(product), v, t: Date.now(), fav: !!(prev && prev.fav),
+    brand: (product.brands || '').split(',')[0].trim(), img: product.image_front_small_url || ''
+  }, ...all.filter((e) => e.code !== code)]);
 }
-
 const isFav = (code) => loadHistory().some((e) => e.code === code && e.fav);
 function toggleFav(code) {
   const list = loadHistory();
@@ -527,454 +193,659 @@ function toggleFav(code) {
   if (!e) return false;
   e.fav = !e.fav;
   saveHistory(list);
-  renderHistory();
   return e.fav;
 }
 
+/* =========================================================== Bausteine */
+
+const $ = (s, root = document) => root.querySelector(s);
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
+  (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const NUM = new Intl.NumberFormat('de-DE', { maximumFractionDigits: 1 });
+const REL = new Intl.RelativeTimeFormat('de-DE', { numeric: 'auto' });
 const DATE = new Intl.DateTimeFormat('de-DE', { day: 'numeric', month: 'short' });
-let historyFilter = 'all';
 
-function rowMarkup(e, withDate) {
-  return `
-    <li><button type="button" data-code="${esc(e.code)}">
-      <span class="dot d-${esc(e.v)}"></span>
-      <span class="t">${e.fav ? '<span class="star">★</span> ' : ''}${esc(e.name)}</span>
-      <span class="c">${withDate && e.t ? esc(DATE.format(e.t)) : esc(e.code)}</span>
-      <span class="chev" aria-hidden="true"><svg viewBox="0 0 7 12"><path d="M1 1l5 5-5 5"/></svg></span>
-    </button></li>`;
+function when(t) {
+  const d = (Date.now() - t) / 1000;
+  if (d < 60) return 'gerade';
+  if (d < 3600) return REL.format(-Math.round(d / 60), 'minute');
+  if (d < 86400) return REL.format(-Math.round(d / 3600), 'hour');
+  if (d < 7 * 86400) return REL.format(-Math.round(d / 86400), 'day');
+  return DATE.format(t);
 }
 
-function renderHistory() {
-  const list = loadHistory();
-  els.recentWrap.hidden = list.length === 0;
-  els.recent.innerHTML = list.slice(0, 5).map((e) => rowMarkup(e, false)).join('');
+const PH = '<svg viewBox="0 0 24 24"><path d="M6 8h12l-1 11H7z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>';
+const thumb = (url, cls = 'thumb') => url
+  ? `<img class="${cls}" src="${esc(url)}" alt="" loading="lazy" decoding="async">`
+  : `<span class="${cls} thumb-ph">${PH}</span>`;
 
-  const shown = list.filter((e) => historyFilter === 'all' ? true
-    : historyFilter === 'fav' ? e.fav : e.v === historyFilter);
-  els.history.innerHTML = shown.map((e) => rowMarkup(e, true)).join('');
-  els.history.hidden = shown.length === 0;
-  els.historyEmpty.hidden = shown.length > 0;
-  els.historyEmpty.textContent = list.length ? 'Keine Einträge für diesen Filter.'
-    : 'Noch nichts geprüft. Scanne einen Barcode, er erscheint dann hier.';
+const ICON = {
+  star: '<svg viewBox="0 0 24 24"><path d="m12 3.6 2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.2-4.1 5.8-.8z"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><path d="M12 15V3.8M8 7.4l4-3.9 4 3.9"/><path d="M8.5 10.5H7a2 2 0 0 0-2 2V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6.5a2 2 0 0 0-2-2h-1.5"/></svg>',
+  edit: '<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></svg>',
+  seal: '<svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+  scan: '<svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2M7 12h10"/></svg>'
+};
 
-  const n = (k) => list.filter((e) => e.v === k).length;
-  const total = list.length || 1;
-  const parts = [['vegan', 'Vegan'], ['likely', 'Wahrsch. vegan'], ['vegetarian', 'Vegetarisch'], ['no', 'Nicht veg.'], ['unknown', 'Unklar']];
-  els.stats.hidden = list.length === 0;
-  els.stats.innerHTML = `
-    <div class="stat-top"><b>${list.length}</b> Produkte geprüft · <b>${Math.round((n('vegan') + n('likely')) / total * 100)}%</b> vegan</div>
-    <div class="bar-stack">${parts.map(([k]) => n(k) ? `<span class="d-${k}" style="flex:${n(k)}"></span>` : '').join('')}</div>
-    <div class="legend">${parts.map(([k, l]) => `<span><i class="dot d-${k}"></i>${l} ${n(k)}</span>`).join('')}</div>`;
+function heroMarkup(v, title, sub, extra = '') {
+  return `<div class="hero anim ${v.cls}" role="status">
+    <div class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true">${v.glyph}</svg></div>
+    <h3>${esc(title)}</h3>${sub ? `<p class="sub">${sub}</p>` : ''}${extra}</div>`;
 }
 
-/* ------------------------------------------------------------------ Suche */
+const SHORT = { vegan: 'Vegan', likely: 'Wahrscheinlich vegan', vegetarian: 'Vegetarisch', no: 'Nicht vegetarisch', unknown: 'Unklar' };
 
-let searchFilter = 'all';
-let searchSeq = 0;
-
-function quickVerdict(p) {
-  const l = p.labels_tags || [], t = p.ingredients_analysis_tags || [];
-  if (l.includes('en:vegan') || t.includes('en:vegan')) return 'vegan';
-  if (t.includes('en:non-vegetarian')) return 'no';
-  if (t.includes('en:non-vegan') && (t.includes('en:vegetarian') || l.includes('en:vegetarian'))) return 'vegetarian';
-  return 'unknown';
+function productRow(p, v, withTime = false) {
+  const verdict = VERDICTS[v] || VERDICTS.unknown;
+  return `<li><button type="button" class="row" data-code="${esc(p.code)}">
+    ${thumb(p.image_front_small_url || p.img)}
+    <span class="row-text"><span>${p.fav ? '<span class="star">★</span> ' : ''}${esc(p.name || productTitle(p))}</span>
+      <small><span class="t-${v}">${esc(SHORT[v] || verdict.title)}</span>${p.brands || p.brand ? ' · ' + esc((p.brands || p.brand).split(',')[0]) : ''}${p.t && withTime ? ' · ' + esc(when(p.t)) : ''}</small></span>
+    <span class="chev"></span>
+  </button></li>`;
 }
 
-/** Produktsuche bei Open Food Facts. terms = Freitext, tags = [[Typ, Wert], …]. */
-async function searchApi(terms, tags, size) {
-  let url = `${SEARCH}?action=process&json=1&page_size=${size}&sort_by=unique_scans_n&fields=${LIST_FIELDS}`;
-  if (terms) url += `&search_simple=1&search_terms=${encodeURIComponent(terms)}`;
-  tags.forEach(([type, value], i) => {
-    url += `&tagtype_${i}=${type}&tag_contains_${i}=contains&tag_${i}=${encodeURIComponent(value)}`;
-  });
-  const res = await fetch(url, { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+let toastTimer;
+function toast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 2000);
+}
+const haptic = (ms = 12) => { if (navigator.vibrate) navigator.vibrate(ms); };
+
+/* ================================================================= Sheet */
+
+const sheet = $('#sheet');
+const sheetBody = $('#sheet-body');
+const stack = [];       // Ansichten im Sheet (für „Zurück“)
+
+function showView(view) {
+  $('#sheet-title').textContent = view.title || '';
+  $('#sheet-actions').innerHTML = view.actions || '';
+  $('#sheet-back').hidden = stack.length < 2;
+  sheetBody.scrollTop = 0;
+  sheetBody.innerHTML = '';
+  view.render(sheetBody, view);
 }
 
-async function runSearch() {
-  const q = $('#search-q').value.trim();
-  const box = $('#search-results');
-  if (q.length < 2) { box.innerHTML = ''; return; }
-  const seq = ++searchSeq;
-  box.innerHTML = '<div class="spinner-box"><div class="spinner"></div>Suche …</div>';
-  try {
-    const data = await searchApi(q, searchFilter === 'all' ? []
-      : [['ingredients_analysis', 'en:' + searchFilter]], 30);
-    if (seq !== searchSeq) return;
-    const items = data.products || [];
-    if (!items.length) { box.innerHTML = '<p class="empty">Nichts gefunden.</p>'; return; }
-    box.innerHTML = `<ul class="list">${items.map((p) => `
-      <li><button type="button" data-code="${esc(p.code)}">
-        ${p.image_front_small_url ? `<img class="thumb" src="${esc(p.image_front_small_url)}" alt="" loading="lazy">` : '<span class="thumb"></span>'}
-        <span class="t two"><span>${esc(productTitle(p))}</span><small>${esc([p.brands, p.quantity].filter(Boolean).join(' · '))}</small></span>
-        <span class="dot d-${quickVerdict(p)}"></span>
-        <span class="chev" aria-hidden="true"><svg viewBox="0 0 7 12"><path d="M1 1l5 5-5 5"/></svg></span>
-      </button></li>`).join('')}</ul>`;
-  } catch (_) {
-    // Open Food Facts erlaubt nur rund 10 Suchen pro Minute.
-    if (seq === searchSeq) box.innerHTML = '<p class="empty">Suche gerade nicht erreichbar – bitte gleich noch einmal versuchen.</p>';
+function openSheet(view, { push = false } = {}) {
+  if (!push) stack.length = 0;
+  stack.push(view);
+  showView(view);
+  if (!sheet.open) {
+    sheet.classList.remove('closing');
+    sheet.showModal();
+    document.body.classList.add('sheet-open');
   }
 }
 
-/* ---------------------------------------------------------- Zutaten-Check */
+function closeSheet() {
+  if (!sheet.open || sheet.classList.contains('closing')) return;
+  sheet.classList.add('closing');
+  const done = () => {
+    sheet.classList.remove('closing');
+    sheet.style.transform = '';
+    sheet.close();
+    document.body.classList.remove('sheet-open');
+    stack.length = 0;
+    if (location.search) history.replaceState(null, '', location.pathname);
+  };
+  matchMedia('(prefers-reduced-motion: reduce)').matches ? done() : setTimeout(done, 280);
+}
+
+$('#sheet-close').addEventListener('click', closeSheet);
+$('#sheet-back').addEventListener('click', () => { stack.pop(); showView(stack[stack.length - 1]); });
+sheet.addEventListener('cancel', (e) => { e.preventDefault(); closeSheet(); });
+sheet.addEventListener('click', (e) => { if (e.target === sheet) closeSheet(); });
+
+// Nach unten ziehen schließt – wie unter iOS.
+(() => {
+  let startY = null, dy = 0;
+  const begin = (y) => { startY = y; dy = 0; sheet.classList.add('dragging'); };
+  const move = (y) => {
+    if (startY === null) return;
+    dy = Math.max(0, y - startY);
+    sheet.style.transform = `translateY(${dy}px)`;
+  };
+  const end = () => {
+    if (startY === null) return;
+    sheet.classList.remove('dragging');
+    startY = null;
+    if (dy > 110) closeSheet();
+    else { sheet.style.transition = 'transform .35s var(--ease)'; sheet.style.transform = ''; setTimeout(() => { sheet.style.transition = ''; }, 360); }
+  };
+  for (const el of [$('.sheet-grabber'), $('.sheet-bar')]) {
+    el.addEventListener('touchstart', (e) => { if (!e.target.closest('button')) begin(e.touches[0].clientY); }, { passive: true });
+  }
+  sheetBody.addEventListener('touchstart', (e) => { if (sheetBody.scrollTop <= 0) begin(e.touches[0].clientY); }, { passive: true });
+  sheet.addEventListener('touchmove', (e) => {
+    if (startY === null) return;
+    if (e.touches[0].clientY < startY && dy === 0) { sheet.classList.remove('dragging'); startY = null; return; }
+    move(e.touches[0].clientY);
+  }, { passive: true });
+  sheet.addEventListener('touchend', end);
+  sheet.addEventListener('touchcancel', end);
+})();
+
+/* ============================================================== Ergebnis */
+
+const ALLERGENS = {
+  'en:milk': 'Milch', 'en:eggs': 'Ei', 'en:gluten': 'Gluten', 'en:nuts': 'Schalenfrüchte',
+  'en:peanuts': 'Erdnüsse', 'en:soybeans': 'Soja', 'en:fish': 'Fisch', 'en:crustaceans': 'Krebstiere',
+  'en:molluscs': 'Weichtiere', 'en:celery': 'Sellerie', 'en:mustard': 'Senf',
+  'en:sesame-seeds': 'Sesam', 'en:sulphur-dioxide-and-sulphites': 'Sulfite', 'en:lupin': 'Lupine'
+};
+function allergenNames(tags) {
+  const out = (tags || []).map((t) => {
+    const clean = 'en:' + t.replace(/^([a-z]{2}:\s*)+/i, '').trim();
+    return ALLERGENS[clean] || clean.slice(3).replace(/-/g, ' ');
+  }).filter(Boolean).map((n) => n.charAt(0).toUpperCase() + n.slice(1));
+  return [...new Set(out)];
+}
+
+const NUTRIENTS = [
+  ['energy-kcal', 'Energie', 'kcal'], ['fat', 'Fett', 'g'], ['saturated-fat', 'davon gesättigte Fettsäuren', 'g'],
+  ['carbohydrates', 'Kohlenhydrate', 'g'], ['sugars', 'davon Zucker', 'g'], ['fiber', 'Ballaststoffe', 'g'],
+  ['proteins', 'Eiweiß', 'g'], ['salt', 'Salz', 'g']
+];
+
+function detailsMarkup(p) {
+  const n = p.nutriments || {};
+  const rows = NUTRIENTS.filter(([k]) => typeof n[k + '_100g'] === 'number');
+  const al = allergenNames(p.allergens_tags);
+  const tr = allergenNames(p.traces_tags).filter((t) => !al.includes(t));
+  const ns = (p.nutriscore_grade || '').toLowerCase();
+  const scores = [
+    /^[a-e]$/.test(ns) ? `<span class="score ns-${ns}">Nutri-Score <b>${ns.toUpperCase()}</b></span>` : '',
+    p.nova_group ? `<span class="score">NOVA <b>${esc(p.nova_group)}</b></span>` : ''
+  ].join('');
+  const text = ingredientsText(p);
+  if (!rows.length && !al.length && !tr.length && !scores && !text) return '';
+
+  return `<details class="disclosure">
+    <summary class="row"><span class="row-text"><span>Zutaten, Allergene & Nährwerte</span></span><span class="chev"></span></summary>
+    ${scores ? `<div class="chips-row divided">${scores}</div>` : ''}
+    ${al.length || tr.length ? `<ul class="list">
+      ${al.length ? `<li><div class="static kv"><span class="k">Allergene</span><span class="v">${esc(al.join(', '))}</span></div></li>` : ''}
+      ${tr.length ? `<li><div class="static kv"><span class="k">Spuren</span><span class="v">${esc(tr.join(', '))}</span></div></li>` : ''}
+    </ul>` : ''}
+    ${text ? `<div class="sub-head">Zutaten</div><p class="prose">${esc(text)}</p>` : ''}
+    ${rows.length ? `<div class="sub-head">Nährwerte je 100 g</div><ul class="list">${rows.map(([k, name, unit]) => `
+      <li><div class="static kv${name.startsWith('davon') ? ' sub' : ''}"><span class="k">${esc(name)}</span><span class="v">${NUM.format(n[k + '_100g'])} ${unit}</span></div></li>`).join('')}</ul>` : ''}
+  </details>`;
+}
+
+function skeleton(body) {
+  body.innerHTML = `
+    <div class="hero"><div class="sk sk-circle"></div><div class="sk sk-line"></div><div class="sk sk-line short"></div></div>
+    <div class="product-card"><div class="product-head"><div class="sk sk-thumb"></div><div class="sk-text"><div class="sk"></div><div class="sk"></div></div></div></div>`;
+}
+
+function productView(code) {
+  return {
+    title: '',
+    render(body, view) {
+      const cached = cacheRead(code);
+      if (cached) { renderProduct(body, view, code, cached); return; }
+      skeleton(body);
+      fetchProduct(code).then((p) => {
+        if (stack[stack.length - 1] !== view) return;      // inzwischen weiter navigiert
+        if (p) renderProduct(body, view, code, p);
+        else renderNotFound(body, code);
+      }, () => {
+        if (stack[stack.length - 1] !== view) return;
+        body.innerHTML = heroMarkup(VERDICTS.unknown, 'Keine Verbindung',
+          'Die Datenbank antwortet gerade nicht.', `<div><button class="btn" type="button" data-retry="${esc(code)}">Erneut versuchen</button></div>`);
+      });
+    }
+  };
+}
+
+function renderProduct(body, view, code, p) {
+  const { verdict, reasons, veganLabel } = assess(p);
+  const meta = [p.brands && p.brands.split(',')[0], p.quantity].filter(Boolean).join(' · ');
+  const sourceNote = p._source && p._source !== 'Open Food Facts' ? `<br><small>Quelle: ${esc(p._source)}</small>` : '';
+  $('#sheet-title').textContent = productTitle(p);
+  haptic(verdict.key === 'vegan' || verdict.key === 'likely' ? 15 : [20, 60, 20]);
+
+  body.innerHTML = `
+    ${heroMarkup(verdict, verdict.title, esc(verdict.sub), veganLabel ? `<div><span class="seal">${ICON.seal}Vegan-Siegel</span></div>` : '')}
+    <div class="product-card anim">
+      <div class="product-head">${thumb(p.image_front_small_url || p.image_front_url)}
+        <div><div class="name">${esc(productTitle(p))}</div><div class="meta">${esc(meta || 'Barcode ' + code)}${sourceNote}</div></div>
+      </div>
+      ${reasons.length ? `<ul class="reasons">${reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
+    </div>
+    <div class="actions">
+      <button type="button" class="action" data-fav="${esc(code)}" aria-pressed="${isFav(code)}">${ICON.star}<span>${isFav(code) ? 'Gemerkt' : 'Merken'}</span></button>
+      <button type="button" class="action" data-share="${esc(code)}">${ICON.share}<span>Teilen</span></button>
+      <a class="action" href="${esc(p._site || 'https://de.openfoodfacts.org')}${p._source === 'USDA FoodData Central' ? '' : '/produkt/' + encodeURIComponent(code)}" target="_blank" rel="noopener">${ICON.edit}<span>${p._source === 'USDA FoodData Central' ? 'Quelle' : 'Korrigieren'}</span></a>
+    </div>
+    <section id="alts-wrap" hidden><span class="section-title">Vegane Alternativen</span><div class="alts" id="alts"></div></section>
+    ${detailsMarkup(p)}
+    <p class="footnote">Ohne Gewähr – Rezepturen ändern sich. Im Zweifel die Verpackung lesen.</p>`;
+
+  addHistory(code, p, verdict.key);
+  view.product = p;
+  if (verdict.key !== 'vegan' && verdict.key !== 'likely') loadAlternatives(p, view);
+}
+
+async function loadAlternatives(p, view) {
+  const cats = (p.categories_hierarchy || p.categories_tags || []).filter((c) => c.startsWith('en:'));
+  const cat = cats[cats.length - 1];
+  if (!cat) return;
+  try {
+    const items = (await searchProducts('', [['labels', 'en:vegan'], ['categories', cat]], 12))
+      .filter((x) => x.code !== p.code).slice(0, 8);
+    if (!items.length || stack[stack.length - 1] !== view) return;
+    $('#alts').innerHTML = items.map((x) => `
+      <button type="button" class="alt" data-code="${esc(x.code)}">
+        ${x.image_front_small_url ? `<img src="${esc(x.image_front_small_url)}" alt="" loading="lazy">` : '<span class="ph"></span>'}
+        <span class="t">${esc(productTitle(x))}</span><small>${esc((x.brands || '').split(',')[0])}</small>
+      </button>`).join('');
+    $('#alts-wrap').hidden = false;
+  } catch (_) { /* Alternativen sind nur ein Extra */ }
+}
+
+function renderNotFound(body, code) {
+  $('#sheet-title').textContent = 'Nicht gefunden';
+  body.innerHTML = `
+    ${heroMarkup(VERDICTS.unknown, 'Noch nicht erfasst',
+      `Barcode ${esc(code)} steht in keiner der offenen Datenbanken. Prüfe die Zutatenliste selbst – das geht in Sekunden.`)}
+    <div class="btn-col">
+      <button type="button" class="btn wide" data-open="ingredients">Zutatenliste prüfen</button>
+      <a class="btn secondary wide" href="https://de.openfoodfacts.org/cgi/product.pl?type=add&code=${encodeURIComponent(code)}" target="_blank" rel="noopener">Produkt eintragen</a>
+    </div>
+    <p class="footnote">Gesucht in Open Food Facts, Open Beauty Facts, Open Pet Food Facts, Open Products Facts und USDA FoodData Central.</p>`;
+  haptic([20, 60, 20]);
+}
+
+function check(code) {
+  closeScanner();
+  $('#q').blur();
+  history.replaceState(null, '', `${location.pathname}?code=${code}`);
+  openSheet(productView(code));
+}
+
+/* ========================================================= Weitere Sheets */
+
+let historyFilter = 'all';
+function historyView() {
+  return {
+    title: 'Verlauf',
+    render(body) {
+      const all = loadHistory();
+      if (!all.length) {
+        body.innerHTML = `<div class="empty"><b>Noch nichts geprüft</b>Gescannte Produkte erscheinen hier.</div>`;
+        return;
+      }
+      const counts = (k) => all.filter((e) => e.v === k).length;
+      const vegan = counts('vegan') + counts('likely');
+      const shown = historyFilter === 'fav' ? all.filter((e) => e.fav)
+        : historyFilter === 'vegan' ? all.filter((e) => e.v === 'vegan' || e.v === 'likely') : all;
+      body.innerHTML = `
+        <div class="segmented" role="group" aria-label="Filter">
+          ${[['all', `Alle (${all.length})`], ['vegan', `Vegan (${vegan})`], ['fav', `Favoriten (${all.filter((e) => e.fav).length})`]]
+            .map(([k, l]) => `<button type="button" data-filter="${k}" aria-pressed="${historyFilter === k}">${l}</button>`).join('')}
+        </div>
+        ${shown.length ? `<ul class="list thumbs">${shown.map((e) => productRow(e, e.v, true)).join('')}</ul>`
+          : `<div class="empty">${historyFilter === 'fav' ? 'Tippe im Ergebnis auf „Merken“, um Produkte hier zu sammeln.' : 'Keine Einträge.'}</div>`}
+        <div class="btn-col"><button type="button" class="btn secondary wide" data-clear style="color:var(--red-ink)">Verlauf löschen</button></div>`;
+    }
+  };
+}
 
 const LEVEL_TEXT = { no: 'nicht vegetarisch', veg: 'nicht vegan', maybe: 'unklar' };
 const LEVEL_DOT = { no: 'no', veg: 'vegetarian', maybe: 'unknown' };
 
-function renderIngredients() {
-  const text = $('#ing-text').value.trim();
+function ingredientsView() {
+  return {
+    title: 'Zutatenliste prüfen',
+    render(body) {
+      body.innerHTML = `
+        <textarea id="ing-text" class="textarea" placeholder="Zutaten einfügen oder abtippen, z. B. Weizenmehl, Zucker, Vollmilchpulver, E471"></textarea>
+        <p class="footnote">Tipp fürs iPhone: lange ins Feld tippen → „Text scannen“ und die Kamera auf die Verpackung halten. Geprüft wird auf dem Gerät, auch ohne Netz.</p>
+        <div id="ing-result"></div>
+        <details class="disclosure">
+          <summary class="row"><span class="row-text"><span>E-Nummern tierischen Ursprungs</span></span><span class="chev"></span></summary>
+          <ul class="list">${Object.entries(RULES.E)
+            .sort((a, b) => 'nvm'.indexOf(a[1][0][0]) - 'nvm'.indexOf(b[1][0][0]) || parseInt(a[0].slice(1)) - parseInt(b[0].slice(1)))
+            .map(([k, [lvl, name]]) => `<li><div class="static"><span class="dot d-${LEVEL_DOT[lvl]}"></span>
+              <span class="row-text"><span>${k}</span><small>${esc(name)}</small></span><span class="row-meta">${LEVEL_TEXT[lvl]}</span></div></li>`).join('')}
+          </ul>
+        </details>`;
+      const ta = $('#ing-text', body);
+      ta.addEventListener('input', () => renderIngredientResult(ta.value));
+      setTimeout(() => ta.focus({ preventScroll: true }), 350);
+    }
+  };
+}
+
+function renderIngredientResult(text) {
   const box = $('#ing-result');
-  if (!text) { box.innerHTML = ''; return; }
-  const { level, hits } = RULES.analyze(text);
+  if (!text.trim()) { box.innerHTML = ''; return; }
+  let { level, hits } = RULES.analyze(text);
+  if (level === 'unknown' && hits.every((h) => MOSTLY_PLANT.test(h.text) || MOSTLY_PLANT.test(h.note))) level = 'likely';
   const v = VERDICTS[level];
-  box.innerHTML = `
-    <div class="verdict ${v.cls}">${glyphMarkup(v.glyph)}<h2>${esc(v.title)}</h2>
-      ${v.sub ? `<p class="sub">${esc(v.sub)}</p>` : ''}</div>
-    ${hits.length ? `<ul class="list">${hits.map((h) => `
-      <li><div class="li"><span class="dot d-${LEVEL_DOT[h.level]}"></span>
-        <span class="t two"><span>${esc(h.text)}</span><small>${esc(h.note)}</small></span>
-        <span class="c">${LEVEL_TEXT[h.level]}</span></div></li>`).join('')}</ul>` : ''}`;
+  box.innerHTML = `<div class="hero ${v.cls}"><div class="glyph"><svg viewBox="0 0 24 24">${v.glyph}</svg></div>
+      <h3>${esc(v.title)}</h3><p class="sub">${hits.length ? hits.length + ' auffällige Zutat' + (hits.length > 1 ? 'en' : '') : 'Keine tierischen Zutaten gefunden'}</p></div>
+    ${hits.length ? `<ul class="list" style="margin-top:16px">${hits.map((h) => `
+      <li><div class="static"><span class="dot d-${LEVEL_DOT[h.level]}"></span>
+        <span class="row-text"><span>${esc(h.text)}</span><small>${esc(h.note)}</small></span></div></li>`).join('')}</ul>` : ''}`;
 }
 
-function renderELexicon() {
-  const order = { no: 0, veg: 1, maybe: 2 };
-  $('#e-list').innerHTML = Object.entries(RULES.E)
-    .sort((a, b) => order[a[1][0]] - order[b[1][0]] || parseInt(a[0].slice(1)) - parseInt(b[0].slice(1)))
-    .map(([k, [lvl, name]]) => `<div><dt><span class="dot d-${LEVEL_DOT[lvl]}"></span> ${k} · ${esc(name)}</dt><dd>${LEVEL_TEXT[lvl]}</dd></div>`)
-    .join('');
+function infoView() {
+  return {
+    title: 'Über VeganCheck',
+    render(body) {
+      body.innerHTML = `
+        <section><span class="section-title">Ergebnisse</span><ul class="list">
+          ${['vegan', 'likely', 'vegetarian', 'no', 'unknown'].map((k) => `<li><div class="static"><span class="dot d-${k}"></span>
+            <span class="row-text"><span>${VERDICTS[k].title}</span><small>${{
+              vegan: 'Siegel oder alle Zutaten pflanzlich', likely: 'Nur Aroma, Lecithin & Co. offen',
+              vegetarian: 'Enthält z. B. Milch, Ei oder Honig', no: 'Fleisch, Fisch, Gelatine …', unknown: 'Zu wenige Angaben'
+            }[k]}</small></span></div></li>`).join('')}
+        </ul></section>
+        <section><span class="section-title">Daten</span><ul class="list"><li><p class="prose" style="color:var(--label)">
+          Open Food Facts, Open Beauty Facts, Open Pet Food Facts, Open Products Facts (ODbL) und USDA FoodData Central.
+          Fehlt eine Analyse, prüft VeganCheck den Zutatentext selbst.</p></li></ul></section>
+        <section><span class="section-title">Hinweise</span><ul class="list"><li><p class="prose">
+          Keine Garantie: Rezepturen ändern sich, Einträge können fehlerhaft sein. Im Zweifel die Verpackung lesen – besonders bei Allergien.
+          Keine Tracker, keine Cookies. Verlauf und Zwischenspeicher bleiben auf diesem Gerät.</p></li></ul></section>
+        <p class="footnote">Tipp: „Teilen → Zum Home-Bildschirm“ macht VeganCheck zur App.</p>`;
+    }
+  };
 }
 
-/* ------------------------------------------------------------- Navigation */
+/* ============================================================ Startseite */
 
-function go(tab) {
-  document.querySelectorAll('.tab').forEach((t) => { t.hidden = t.dataset.tab !== tab; });
-  document.querySelectorAll('.tabbar button').forEach((b) =>
-    b.toggleAttribute('aria-current', b.dataset.go === tab));
-  if (tab !== 'scan') stopScan();
-  const hash = tab === 'scan' ? '' : '#' + tab;
-  if (location.hash !== hash) history.replaceState(null, '', location.pathname + location.search + hash);
+function renderRecent() {
+  const list = loadHistory();
+  $('#recent-wrap').hidden = !list.length;
+  $('#recent').className = 'list thumbs';
+  $('#recent').innerHTML = list.slice(0, 5).map((e) => productRow(e, e.v)).join('');
 }
 
-function toast(msg) {
-  els.toast.textContent = msg;
-  els.toast.hidden = false;
-  clearTimeout(toast.t);
-  toast.t = setTimeout(() => { els.toast.hidden = true; }, 2200);
+/* Ein Feld für alles: Ziffern → Barcode prüfen, Text → Suche. */
+const q = $('#q');
+let searchCtl = null, searchTimer = null;
+
+function setSearchMode(on) {
+  $('#home').hidden = on;
+  $('#search').hidden = !on;
+  // Wie unter iOS: beim Suchen rückt das Feld nach oben, die Kamera macht Platz.
+  if (on) closeScanner();
+  camera.classList.toggle('collapsed', on);
+  $('#btn-clear').hidden = !q.value;
 }
+
+function onQuery(immediate) {
+  const value = q.value.trim();
+  clearTimeout(searchTimer);
+  if (searchCtl) searchCtl.abort();
+  setSearchMode(!!value);
+  if (!value) return;
+  const box = $('#search');
+  const digits = value.replace(/[\s-]/g, '');
+
+  if (/^\d+$/.test(digits)) {
+    box.innerHTML = `<ul class="list icons"><li><button type="button" class="row" data-code="${esc(digits)}" ${digits.length < 8 ? 'disabled style="opacity:.5"' : ''}>
+      <span class="row-icon ri-green">${ICON.scan}</span>
+      <span class="row-text"><span>Barcode ${esc(digits)} prüfen</span><small>${digits.length < 8 ? 'Meist 8 oder 13 Ziffern' : 'Eingabetaste oder tippen'}</small></span>
+      <span class="chev"></span></button></li></ul>`;
+    if (immediate && digits.length >= 8) check(digits);
+    return;
+  }
+
+  // Treffer aus dem eigenen Verlauf sofort zeigen
+  const needle = value.toLowerCase();
+  const local = loadHistory().filter((e) => (e.name + ' ' + (e.brand || '')).toLowerCase().includes(needle)).slice(0, 4);
+  const localHtml = local.length ? `<div class="group-head" style="padding-top:0"><h2>Im Verlauf</h2></div>
+    <ul class="list thumbs">${local.map((e) => productRow(e, e.v)).join('')}</ul>` : '';
+  if (value.length < 2) { box.innerHTML = localHtml; return; }
+
+  box.innerHTML = localHtml + `<div class="group-head" style="padding-top:${local.length ? 22 : 0}px"><h2>Produkte</h2></div>
+    <div id="remote" class="list"><div class="searching"><span class="spinner"></span>Suche …</div></div>`;
+
+  searchTimer = setTimeout(async () => {
+    const ctl = searchCtl = new AbortController();
+    try {
+      const items = await searchProducts(value, [['countries', 'en:germany']], 24, ctl.signal);
+      if (ctl !== searchCtl) return;
+      const remote = $('#remote');
+      if (!remote) return;
+      remote.outerHTML = items.length
+        ? `<ul class="list thumbs" id="remote">${items.map((p) => productRow(p, quickVerdict(p))).join('')}</ul>`
+        : `<div class="list" id="remote"><div class="empty"><b>Keine Treffer</b>Anders schreiben oder den Barcode scannen.</div></div>`;
+    } catch (err) {
+      if (err.name === 'AbortError' || ctl !== searchCtl) return;
+      const remote = $('#remote');
+      if (remote) remote.outerHTML = `<div class="list" id="remote"><div class="empty"><b>Suche überlastet</b>
+        Open Food Facts lässt gerade keine Suche zu. Barcode scannen klappt weiterhin.<br><br>
+        <button type="button" class="btn secondary" data-research>Erneut suchen</button></div></div>`;
+    }
+  }, immediate ? 0 : 450);
+}
+
+q.addEventListener('input', () => onQuery(false));
+$('#query-form').addEventListener('submit', (e) => { e.preventDefault(); onQuery(true); });
+$('#btn-clear').addEventListener('click', () => { q.value = ''; onQuery(false); q.focus(); });
+
+/* ================================================================ Klicks */
+
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  let el;
+  if ((el = t.closest('[data-code]'))) {
+    const inSheet = sheet.contains(el);
+    if (inSheet) { openSheet(productView(el.dataset.code), { push: true }); return; }
+    check(el.dataset.code);
+  } else if ((el = t.closest('[data-open]'))) {
+    const view = { ingredients: ingredientsView, history: historyView, info: infoView }[el.dataset.open]();
+    openSheet(view, { push: sheet.open });
+  } else if ((el = t.closest('[data-fav]'))) {
+    const on = toggleFav(el.dataset.fav);
+    el.setAttribute('aria-pressed', on);
+    el.querySelector('span').textContent = on ? 'Gemerkt' : 'Merken';
+    haptic();
+    toast(on ? 'Gemerkt' : 'Nicht mehr gemerkt');
+  } else if ((el = t.closest('[data-share]'))) {
+    share(el.dataset.share);
+  } else if ((el = t.closest('[data-retry]'))) {
+    showView(stack[stack.length - 1]);
+  } else if (t.closest('[data-research]')) {
+    searchCache.clear();
+    onQuery(true);
+  } else if ((el = t.closest('[data-filter]'))) {
+    historyFilter = el.dataset.filter;
+    showView(stack[stack.length - 1]);
+  } else if (t.closest('[data-clear]')) {
+    if (confirm('Gesamten Verlauf inklusive Favoriten löschen?')) { saveHistory([]); showView(stack[stack.length - 1]); }
+  }
+});
+
+$('#btn-all').addEventListener('click', () => openSheet(historyView()));
+$('#btn-info').addEventListener('click', () => openSheet(infoView()));
 
 async function share(code) {
+  const view = stack[stack.length - 1];
+  const p = view && view.product;
   const url = `${location.origin}${location.pathname}?code=${code}`;
-  const name = lastProduct && lastProduct.code === code ? productTitle(lastProduct.product) : 'Produkt';
-  const v = lastProduct ? assess(lastProduct.product).verdict.title : '';
-  const data = { title: 'VeganCheck', text: `${name}: ${v}`, url };
+  const text = p ? `${productTitle(p)}: ${assess(p).verdict.title}` : 'VeganCheck';
   try {
-    if (navigator.share) await navigator.share(data);
-    else { await navigator.clipboard.writeText(`${data.text} – ${url}`); toast('Link kopiert'); }
+    if (navigator.share) await navigator.share({ title: 'VeganCheck', text, url });
+    else { await navigator.clipboard.writeText(`${text} – ${url}`); toast('Link kopiert'); }
   } catch (_) {}
 }
 
-/* ----------------------------------------------------------------- Scanner */
+// Kleine Titelleiste erscheint, sobald die große Überschrift wegscrollt.
+const navbar = $('#navbar');
+addEventListener('scroll', () => navbar.classList.toggle('show', scrollY > 52), { passive: true });
 
-const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'];
-let stream = null;
-let detectLoop = null;
-let torchTrack = null;
+/* =============================================================== Scanner */
 
-/* Die Taschenlampe gibt es nur, wo der Browser sie als Fähigkeit der Kamera
-   meldet – auf iOS tut er das bis heute nicht. */
-function setupTorch() {
-  const track = stream && stream.getVideoTracks()[0];
-  const caps = track && track.getCapabilities ? track.getCapabilities() : null;
-  torchTrack = caps && 'torch' in caps ? track : null;
-  setTorchUi(false);
-  els.btnTorch.hidden = !torchTrack;
+const camera = $('#camera');
+const video = $('#video');
+const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'itf'];
+// Zeilenweise Leser sehen nur ungefähr waagerechte Codes. Die meisten liegen
+// waagerecht, also kommt 0° jedes zweite Mal dran; 90°/45°/135° decken den Rest.
+const ANGLES = [0, 90, 0, 45, 0, 135];
+let stream = null, loop = null, torchTrack = null;
+const frame = document.createElement('canvas');
+
+function grab(angle) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return null;
+  // Nur den mittleren Bereich lesen – schneller und weniger Fehltreffer.
+  const cw = vw * 0.86, ch = vh * 0.6, sx = (vw - cw) / 2, sy = (vh - ch) / 2;
+  const scale = Math.min(1, 720 / Math.max(cw, ch));
+  const w = Math.round(cw * scale), h = Math.round(ch * scale);
+  frame.width = angle === 90 ? h : w;
+  frame.height = angle === 90 ? w : h;
+  const ctx = frame.getContext('2d', { willReadFrequently: true });
+  ctx.save();
+  ctx.translate(frame.width / 2, frame.height / 2);
+  ctx.rotate(-angle * Math.PI / 180);
+  ctx.drawImage(video, sx, sy, cw, ch, -w / 2, -h / 2, w, h);
+  ctx.restore();
+  return frame;
 }
 
-function setTorchUi(on) {
-  els.btnTorch.setAttribute('aria-pressed', on ? 'true' : 'false');
-  els.btnTorch.setAttribute('aria-label', on ? 'Taschenlampe ausschalten' : 'Taschenlampe einschalten');
+function setStatus(text) {
+  let el = $('.camera-status', camera);
+  if (!el) { el = document.createElement('div'); el.className = 'camera-status'; camera.appendChild(el); }
+  el.textContent = text;
 }
 
-async function toggleTorch() {
-  if (!torchTrack) return;
-  const on = els.btnTorch.getAttribute('aria-pressed') !== 'true';
-  try {
-    await torchTrack.applyConstraints({ advanced: [{ torch: on }] });
-    setTorchUi(on);
-  } catch (_) {
-    torchTrack = null;
-    els.btnTorch.hidden = true;
-  }
-}
-
-function stopScan() {
-  document.body.classList.remove('scanning');
-  els.btnTorch.hidden = true;
+function closeScanner() {
+  camera.classList.remove('live', 'hit');
+  $('#btn-torch').hidden = true;
   torchTrack = null;
-  els.btnScan.textContent = 'Barcode scannen';
-  els.btnScan.classList.remove('secondary');
-  if (detectLoop) { cancelAnimationFrame(detectLoop); detectLoop = null; }
+  if (loop) { cancelAnimationFrame(loop); loop = null; }
   if (stream) { stream.getTracks().forEach((t) => t.stop()); stream = null; }
-  els.video.srcObject = null;
+  video.srcObject = null;
 }
 
-let lastHit = { code: '', t: 0 };
-
-function onDetected(raw) {
+function detected(raw) {
   const code = String(raw || '').replace(/\D/g, '');
-  if (code.length < 6) return false;
-  if (navigator.vibrate) navigator.vibrate(60);
-  if (els.continuous.checked) {
-    // Im Dauerscan denselben Code nicht sofort erneut prüfen
-    if (code === lastHit.code && Date.now() - lastHit.t < 4000) return false;
-    lastHit = { code, t: Date.now() };
-    check(code);
-    return false;   // Schleife läuft weiter
-  }
-  stopScan();
-  check(code);
+  if (code.length < 8) return false;
+  camera.classList.add('hit');
+  haptic(40);
+  // Abfrage sofort starten, Kamera kurz grün zeigen, dann Ergebnis
+  fetchProduct(code).catch(() => {});
+  setTimeout(() => check(code), 160);
   return true;
-}
-
-async function openCamera() {
-  return navigator.mediaDevices.getUserMedia({
-    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
-    audio: false
-  });
 }
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     const s = document.createElement('script');
-    s.src = src;
-    s.onload = resolve;
-    s.onerror = () => reject(new Error('Script konnte nicht geladen werden: ' + src));
+    s.src = src; s.onload = resolve; s.onerror = reject;
     document.head.appendChild(s);
   });
 }
 
-/* Strichcodes liegen im Regal mal quer, mal hochkant, mal schief. Zeilenweise
-   Leser sehen nur ungefähr waagerechte Codes, deshalb bekommen sie den Frame
-   reihum in vier Lagen vorgelegt: 0°, 90°, 45°, 135°. Zusammen mit der
-   Toleranz von rund ±20° je Lage deckt das jede Ausrichtung ab; auf dem Kopf
-   stehende Codes liest ZXing ohnehin selbst. */
-const ANGLES = [0, 90, 45, 135];
-const frameCanvas = document.createElement('canvas');
-
-function grabFrame(angle) {
-  const video = els.video;
-  const vw = video.videoWidth, vh = video.videoHeight;
-  if (!vw || !vh) return null;
-
-  const scale = Math.min(1, 800 / Math.max(vw, vh));
-  const w = Math.round(vw * scale), h = Math.round(vh * scale);
-  const canvas = frameCanvas;
-  // Nur die Vierteldrehung tauscht die Seiten; schräge Lagen behalten das
-  // Format und schneiden die Ecken ab – der Code liegt im Sucherrahmen.
-  canvas.width = angle === 90 ? h : w;
-  canvas.height = angle === 90 ? w : h;
-
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  ctx.save();
-  ctx.translate(canvas.width / 2, canvas.height / 2);
-  ctx.rotate(-angle * Math.PI / 180);
-  ctx.drawImage(video, -w / 2, -h / 2, w, h);
-  ctx.restore();
-  return canvas;
-}
-
-async function scanWithZXing() {
+async function zxingLoop() {
   if (!window.ZXing) await loadScript('vendor/zxing-0.21.3.min.js');
-  const { MultiFormatReader, BinaryBitmap, HybridBinarizer,
-          HTMLCanvasElementLuminanceSource, DecodeHintType, BarcodeFormat } = window.ZXing;
-
-  const reader = new MultiFormatReader();
-  reader.setHints(new Map([
-    [DecodeHintType.POSSIBLE_FORMATS, [
-      BarcodeFormat.EAN_13, BarcodeFormat.EAN_8,
-      BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.CODE_128
-    ]]
-  ]));
-
-  const read = (canvas) => {
-    try {
-      const source = new HTMLCanvasElementLuminanceSource(canvas);
-      return reader.decodeWithState(new BinaryBitmap(new HybridBinarizer(source)));
-    } catch (_) {
-      return null;               // kein Code in diesem Frame
-    } finally {
-      reader.reset();
-    }
-  };
-
-  let turn = 0, lastRun = 0;
+  const Z = window.ZXing;
+  const reader = new Z.MultiFormatReader();
+  reader.setHints(new Map([[Z.DecodeHintType.POSSIBLE_FORMATS, [
+    Z.BarcodeFormat.EAN_13, Z.BarcodeFormat.EAN_8, Z.BarcodeFormat.UPC_A, Z.BarcodeFormat.UPC_E,
+    Z.BarcodeFormat.CODE_128, Z.BarcodeFormat.ITF]]]));
+  let turn = 0, last = 0;
   const tick = (now) => {
     if (!stream) return;
-    if (now - lastRun > 70) {
-      lastRun = now;
-      const canvas = grabFrame(ANGLES[turn]);
-      const hit = canvas && read(canvas);
-      if (hit && onDetected(hit.getText())) return;
+    if (now - last > 40) {
+      last = now;
+      const c = grab(ANGLES[turn]);
+      if (c) {
+        try {
+          const hit = reader.decodeWithState(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(c))));
+          if (hit && detected(hit.getText())) return;
+        } catch (_) { /* kein Code in diesem Bild */ } finally { reader.reset(); }
+      }
       turn = (turn + 1) % ANGLES.length;
     }
-    if (stream) detectLoop = requestAnimationFrame(tick);
+    loop = requestAnimationFrame(tick);
   };
-  detectLoop = requestAnimationFrame(tick);
+  loop = requestAnimationFrame(tick);
 }
 
-async function scanWithNativeDetector() {
-  const supported = await window.BarcodeDetector.getSupportedFormats();
+async function nativeLoop() {
+  const supported = await BarcodeDetector.getSupportedFormats();
   const formats = FORMATS.filter((f) => supported.includes(f));
-  if (!formats.length) return scanWithZXing();
-
-  const detector = new window.BarcodeDetector({ formats });
+  if (!formats.length) return zxingLoop();
+  const detector = new BarcodeDetector({ formats });
   let turn = 0;
   const tick = async () => {
     if (!stream) return;
     try {
       const angle = ANGLES[turn];
-      const target = angle === 0 ? els.video : grabFrame(angle);
-      const hits = target ? await detector.detect(target) : null;
-      if (hits && hits.length && onDetected(hits[0].rawValue)) return;
-    } catch (_) { /* einzelne Frames dürfen fehlschlagen */ }
+      const hits = await detector.detect(angle === 0 ? video : grab(angle));
+      if (hits.length && detected(hits[0].rawValue)) return;
+    } catch (_) {}
     turn = (turn + 1) % ANGLES.length;
-    if (stream) detectLoop = requestAnimationFrame(tick);
+    if (stream) loop = requestAnimationFrame(tick);
   };
-  detectLoop = requestAnimationFrame(tick);
+  loop = requestAnimationFrame(tick);
 }
 
-async function startScan() {
-  if (stream) { stopScan(); return; }
-
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    els.camHint.textContent = 'Kamera nicht verfügbar – Nummer eintippen';
+async function openScanner() {
+  if (stream) return;
+  const hint = $('#cam-hint');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !isSecureContext) {
+    hint.textContent = 'Kamera nicht verfügbar – Nummer unten eintippen';
     return;
   }
-  if (!window.isSecureContext) {
-    els.camHint.textContent = 'Kamera braucht HTTPS – Nummer eintippen';
-    return;
-  }
-
-  els.camHint.textContent = 'Kamera wird gestartet …';
-  els.btnScan.textContent = 'Scannen beenden';
-  els.btnScan.classList.add('secondary');
+  hint.textContent = 'Kamera wird gestartet …';
   try {
-    stream = await openCamera();
-    els.video.srcObject = stream;
-    await els.video.play();
-    document.body.classList.add('scanning');
-    setupTorch();
-    if ('BarcodeDetector' in window) await scanWithNativeDetector();
-    else await scanWithZXing();
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 }, focusMode: 'continuous' },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    camera.classList.add('live');
+    setStatus('Barcode in den Rahmen halten');
+    hint.textContent = 'Tippen, um die Kamera zu starten';
+    const track = stream.getVideoTracks()[0];
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    torchTrack = 'torch' in caps ? track : null;
+    $('#btn-torch').hidden = !torchTrack;
+    camera.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if ('BarcodeDetector' in window) await nativeLoop(); else await zxingLoop();
   } catch (err) {
-    stopScan();
-    els.camHint.textContent = (err && err.name === 'NotAllowedError')
-      ? 'Kein Kamerazugriff – im Browser erlauben oder Nummer eintippen'
-      : 'Kamera nicht verfügbar – Nummer eintippen';
+    closeScanner();
+    hint.textContent = err && err.name === 'NotAllowedError'
+      ? 'Kein Kamerazugriff – in den Einstellungen erlauben oder Nummer eintippen'
+      : 'Kamera nicht verfügbar – Nummer unten eintippen';
   }
 }
 
-/* -------------------------------------------------------------------- Start */
-
-els.btnScan.addEventListener('click', startScan);
-els.btnTorch.addEventListener('click', toggleTorch);
-
-els.form.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const code = els.input.value.replace(/\D/g, '');
-  if (code.length < 6) {
-    els.input.focus();
-    renderMessage('Nummer unvollständig', 'Meist 8 oder 13 Ziffern.');
-    return;
-  }
-  stopScan();
-  els.input.blur();
-  check(code);
+$('#btn-start').addEventListener('click', openScanner);
+$('#btn-stop').addEventListener('click', closeScanner);
+$('#btn-torch').addEventListener('click', async () => {
+  if (!torchTrack) return;
+  const btn = $('#btn-torch');
+  const on = btn.getAttribute('aria-pressed') !== 'true';
+  try { await torchTrack.applyConstraints({ advanced: [{ torch: on }] }); btn.setAttribute('aria-pressed', on); } catch (_) {}
 });
+document.addEventListener('visibilitychange', () => { if (document.hidden) closeScanner(); });
 
-// Ein Klick-Handler für alle Listen mit Produkten
-document.addEventListener('click', (e) => {
-  const retry = e.target.closest('[data-retry]');
-  if (retry) { e.preventDefault(); check(retry.dataset.retry); return; }
-  const ingHint = e.target.closest('[data-ing-hint]');
-  if (ingHint) { e.preventDefault(); go('ingredients'); $('#ing-text').focus(); return; }
-  const act = e.target.closest('[data-act]');
-  if (act) {
-    const code = act.dataset.code;
-    if (act.dataset.act === 'fav') {
-      const on = toggleFav(code);
-      act.textContent = on ? '★ Gemerkt' : '☆ Merken';
-      act.setAttribute('aria-pressed', on);
-      toast(on ? 'Zu Favoriten hinzugefügt' : 'Aus Favoriten entfernt');
-    } else if (act.dataset.act === 'share') share(code);
-    return;
-  }
-  const row = e.target.closest('#recent button[data-code], #history button[data-code], #search-results button[data-code], .alt[data-code]');
-  if (row) check(row.dataset.code);
-  const tabBtn = e.target.closest('.tabbar button[data-go]');
-  if (tabBtn) go(tabBtn.dataset.go);
-});
+/* ================================================================= Start */
 
-function chipGroup(id, onPick) {
-  $(id).addEventListener('click', (e) => {
-    const c = e.target.closest('.chip');
-    if (!c) return;
-    $(id).querySelectorAll('.chip').forEach((x) => x.classList.toggle('on', x === c));
-    onPick(c.dataset.f);
-  });
+renderRecent();
+function route() {
+  const code = new URLSearchParams(location.search).get('code');
+  if (code && /^\d{6,14}$/.test(code)) check(code);
+  else if (location.hash === '#history') openSheet(historyView());
+  else if (location.hash === '#ingredients') openSheet(ingredientsView());
+  else return;
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search);
 }
-chipGroup('#history-filter', (f) => { historyFilter = f; renderHistory(); });
-chipGroup('#search-filter', (f) => { searchFilter = f; runSearch(); });
+route();
+addEventListener('hashchange', route);
 
-$('#search-form').addEventListener('submit', (e) => { e.preventDefault(); $('#search-q').blur(); runSearch(); });
-let searchTimer;
-$('#search-q').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(runSearch, 900); });
-
-$('#ing-text').addEventListener('input', renderIngredients);
-
-$('#btn-clear').addEventListener('click', () => {
-  if (!confirm('Gesamten Verlauf inklusive Favoriten löschen?')) return;
-  saveHistory([]);
-  renderHistory();
-});
-$('#btn-export').addEventListener('click', () => {
-  const rows = [['Barcode', 'Produkt', 'Marke', 'Ergebnis', 'Favorit', 'Datum']].concat(
-    loadHistory().map((e) => [e.code, e.name, e.brand || '', VERDICTS[e.v] ? VERDICTS[e.v].title : e.v,
-      e.fav ? 'ja' : '', e.t ? new Date(e.t).toISOString().slice(0, 10) : '']));
-  const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(';')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv' }));
-  a.download = 'vegancheck-verlauf.csv';
-  a.click();
-});
-
-try { els.continuous.checked = !!JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}').continuous; } catch (_) {}
-els.continuous.addEventListener('change', () => {
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ continuous: els.continuous.checked })); } catch (_) {}
-});
-
-// Trennlinie unter der Leiste erscheint erst, sobald Inhalt darunter liegt.
-const topbar = document.querySelector('.topbar');
-const onScroll = () => topbar.classList.toggle('stuck', window.scrollY > 2);
-window.addEventListener('scroll', onScroll, { passive: true });
-onScroll();
-
-els.btnInfo.addEventListener('click', () => els.dialog.showModal());
-els.btnCloseInfo.addEventListener('click', () => els.dialog.close());
-
-document.addEventListener('visibilitychange', () => { if (document.hidden) stopScan(); });
-
-renderHistory();
-renderELexicon();
-const startTab = location.hash.slice(1);
-go(['search', 'history', 'ingredients'].includes(startTab) ? startTab : 'scan');
-els.camHint.textContent = 'Barcode ins Bild halten';
-
-// Barcode aus der Adresse, z. B. ?code=4000417025005
-const initial = new URLSearchParams(location.search).get('code');
-if (initial && /^\d{6,14}$/.test(initial)) check(initial);
-
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
-}
+if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

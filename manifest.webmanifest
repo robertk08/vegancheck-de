@@ -43,10 +43,6 @@
   ],
   "shortcuts": [
     {
-      "name": "Produkt suchen",
-      "url": "./#search"
-    },
-    {
       "name": "Verlauf",
       "url": "./#history"
     },

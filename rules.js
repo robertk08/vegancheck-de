@@ -12,7 +12,11 @@ const RULES = (() => {
     'hering', 'makrele', 'kabeljau', 'garnele', 'shrimp', 'krabbe', 'muschel', 'tintenfisch',
     'hummer', 'fischsauce', 'fischöl', 'lab', 'tierisches lab', 'knochen',
     'brühe vom rind', 'hühnerbrühe', 'rinderbrühe', 'fleischextrakt', 'karmin', 'cochenille',
-    'schellack', 'aspik', 'kollagen', 'chitosan', 'leberwurst', 'geflügelleber', 'blutwurst'
+    'schellack', 'aspik', 'kollagen', 'chitosan', 'leberwurst', 'geflügelleber', 'blutwurst',
+    // Englisch (Importware, USDA-Daten)
+    'beef', 'pork', 'chicken', 'turkey', 'bacon', 'ham', 'lard', 'tallow', 'gelatin', 'anchovy',
+    'tuna', 'salmon', 'shrimp', 'crab', 'lobster', 'oyster', 'clam', 'fish', 'meat', 'carmine',
+    'shellac', 'rennet', 'collagen', 'bone broth', 'chicken broth', 'beef broth'
   ];
   // Tierisch, aber vegetarisch: Milch, Ei, Honig & Co.
   const DAIRY_EGG = [
@@ -20,12 +24,14 @@ const RULES = (() => {
     'käse', 'quark', 'joghurt', 'molke', 'molkenpulver', 'lactose', 'laktose', 'kasein',
     'casein', 'caseinat', 'milcheiweiß', 'milchzucker', 'buttermilch', 'kefir', 'ghee',
     'ei', 'eier', 'vollei', 'eigelb', 'eiklar', 'eiweiß vom huhn', 'hühnerei', 'eipulver',
-    'honig', 'bienenwachs', 'gelée royale', 'propolis', 'lysozym', 'lanolin'
+    'honig', 'bienenwachs', 'gelée royale', 'propolis', 'lysozym', 'lanolin',
+    'milk', 'cream', 'cheese', 'whey', 'lactose', 'butter', 'yogurt', 'egg', 'eggs', 'honey',
+    'beeswax', 'ghee', 'nonfat dry milk', 'buttermilk'
   ];
   // Kann pflanzlich oder tierisch sein.
   const MAYBE = [
     'aroma', 'natürliches aroma', 'mono- und diglyceride', 'emulgator', 'vitamin d3',
-    'omega-3', 'glycerin', 'stearinsäure', 'l-cystein'
+    'omega-3', 'glycerin', 'stearinsäure', 'l-cystein', 'natural flavor', 'natural flavors', 'mono and diglycerides'
   ];
 
   // E-Nummern: 'no' = nicht vegetarisch, 'veg' = tierisch aber vegetarisch, 'maybe' = unklar.
@@ -64,7 +70,7 @@ const RULES = (() => {
     E1518: ['maybe', 'Glycerintriacetat']
   };
 
-  const PLANT_PREFIX = /(soja|hafer|mandel|kokos|reis|erbsen|cashew|pflanz|nuss|vegan|kakao|shea|erdnuss|dinkel)/;
+  const PLANT_PREFIX = /(soja|soy|hafer|oat|mandel|almond|kokos|coconut|reis|rice|erbsen|pea |cashew|pflanz|plant|nuss|nut |vegan|kakao|cocoa|shea|erdnuss|peanut|dinkel)/;
 
   function words(text) {
     return text.toLowerCase().replace(/_/g, '').split(/[,;:()\[\]{}.\n]+/).map((s) => s.trim()).filter(Boolean);

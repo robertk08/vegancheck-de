@@ -8,9 +8,14 @@
 <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="VeganCheck">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://world.openfoodfacts.org" crossorigin>
+<link rel="preconnect" href="https://images.openfoodfacts.org">
 <meta property="og:title" content="VeganCheck – Barcode scannen, vegan oder nicht">
 <meta property="og:description" content="Barcode scannen und sofort sehen: vegan, vegetarisch oder keins von beidem.">
 <meta property="og:locale" content="de_DE">
@@ -18,135 +23,95 @@
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header class="topbar">
-  <div class="bar">
-    <span class="slot" aria-hidden="true"></span>
-    <h1 class="title">VeganCheck</h1>
-    <button id="btn-info" class="icon-btn" type="button" aria-label="Info und Datenquelle">
-      <span aria-hidden="true">?</span>
-    </button>
-  </div>
+
+<header class="navbar" id="navbar">
+  <span class="navbar-title" aria-hidden="true">VeganCheck</span>
 </header>
 
 <main>
+  <div class="large-title">
+    <h1>VeganCheck</h1>
+    <button id="btn-info" class="circle-btn" type="button" aria-label="Info">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.2"/><path d="M12 11v5.5"/><circle cx="12" cy="7.6" r=".9" class="fill"/></svg>
+    </button>
+  </div>
 
-  <!-- ============================================================ Scannen -->
-  <section id="tab-scan" class="tab" data-tab="scan">
-    <section id="scanner" class="scanner" aria-label="Barcode scannen">
-      <div class="video-wrap">
-        <video id="video" playsinline muted autoplay></video>
-        <div class="reticle" aria-hidden="true">
-          <span class="corner c1"></span><span class="corner c2"></span>
-          <span class="corner c3"></span><span class="corner c4"></span>
-          <span class="sweep"></span>
-        </div>
-        <button id="btn-torch" class="torch" type="button" aria-label="Taschenlampe einschalten" aria-pressed="false" hidden>
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.3 2.5 5.2 13.1a.6.6 0 0 0 .5 1h5.1l-.9 7.4 8.1-10.6a.6.6 0 0 0-.5-1h-5.1z"/></svg>
-        </button>
-        <p id="cam-hint" class="cam-hint">Barcode ins Bild halten</p>
+  <!-- Kamera -->
+  <section class="camera" id="camera" aria-label="Barcode scannen">
+    <video id="video" playsinline muted autoplay></video>
+    <button id="btn-start" class="camera-idle" type="button">
+      <span class="scan-icon" aria-hidden="true">
+        <svg viewBox="0 0 48 48"><path d="M7 15V10a3 3 0 0 1 3-3h5M33 7h5a3 3 0 0 1 3 3v5M41 33v5a3 3 0 0 1-3 3h-5M15 41h-5a3 3 0 0 1-3-3v-5"/><path d="M15 16v16M20 16v16M25 16v16M30 16v16M34 16v16" class="bars"/></svg>
+      </span>
+      <span class="camera-cta">Barcode scannen</span>
+      <span id="cam-hint" class="camera-hint">Tippen, um die Kamera zu starten</span>
+    </button>
+    <div class="reticle" aria-hidden="true"><span class="sweep"></span></div>
+    <div class="camera-tools">
+      <button id="btn-torch" class="glass-btn" type="button" aria-label="Taschenlampe" aria-pressed="false" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.3 2.5 5.2 13.1a.6.6 0 0 0 .5 1h5.1l-.9 7.4 8.1-10.6a.6.6 0 0 0-.5-1h-5.1z" class="fill"/></svg>
+      </button>
+      <button id="btn-stop" class="glass-btn" type="button" aria-label="Kamera beenden">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg>
+      </button>
+    </div>
+  </section>
+
+  <!-- Ein Feld für Nummer und Name -->
+  <form id="query-form" class="searchfield" role="search" autocomplete="off">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.2"/><path d="m15.2 15.2 4.6 4.6"/></svg>
+    <label class="sr-only" for="q">Barcode-Nummer oder Produktname</label>
+    <input id="q" type="search" enterkeyhint="search" placeholder="Barcode-Nummer oder Produkt">
+    <button id="btn-clear" class="clear" type="button" aria-label="Eingabe löschen" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10" class="fill"/><path d="m8.5 8.5 7 7m0-7-7 7" class="x"/></svg>
+    </button>
+  </form>
+
+  <section id="search" class="group" aria-live="polite" hidden></section>
+
+  <section id="home">
+    <section id="recent-wrap" class="group" hidden>
+      <div class="group-head">
+        <h2>Zuletzt geprüft</h2>
+        <button id="btn-all" class="link" type="button">Alle</button>
       </div>
-      <button id="btn-scan" class="primary wide" type="button">Barcode scannen</button>
-      <label class="toggle"><input id="opt-continuous" type="checkbox"> <span>Dauerscan – Kamera bleibt nach jedem Treffer an</span></label>
-      <form id="manual-form" class="manual" autocomplete="off">
-        <label class="sr-only" for="manual-code">Barcode-Nummer eingeben</label>
-        <input id="manual-code" inputmode="numeric" pattern="[0-9]*" maxlength="14" placeholder="Nummer eintippen">
-        <button type="submit" class="plain">Prüfen</button>
-      </form>
-    </section>
-
-    <section id="result" class="result" aria-live="polite" hidden></section>
-
-    <section id="recent-wrap" class="history" hidden>
-      <h2>Zuletzt geprüft</h2>
       <ul id="recent" class="list"></ul>
     </section>
+
+    <section class="group">
+      <ul class="list">
+        <li><button type="button" class="row" data-open="ingredients">
+          <span class="row-icon ri-green"><svg viewBox="0 0 24 24"><path d="M6 6h12M6 10.5h12M6 15h7"/><circle cx="17.5" cy="17.5" r="2.8"/></svg></span>
+          <span class="row-text"><span>Zutatenliste prüfen</span><small>Für Produkte ohne Eintrag – offline</small></span>
+          <span class="chev"></span>
+        </button></li>
+      </ul>
+    </section>
   </section>
 
-  <!-- ============================================================= Suchen -->
-  <section id="tab-search" class="tab" data-tab="search" hidden>
-    <form id="search-form" class="manual search" role="search" autocomplete="off">
-      <label class="sr-only" for="search-q">Produkt suchen</label>
-      <input id="search-q" type="search" placeholder="Produkt oder Marke, z. B. Haferdrink">
-      <button type="submit" class="plain">Suchen</button>
-    </form>
-    <div class="chips" id="search-filter" role="radiogroup" aria-label="Filter">
-      <button type="button" class="chip on" data-f="all">Alle</button>
-      <button type="button" class="chip" data-f="vegan">Nur vegan</button>
-      <button type="button" class="chip" data-f="vegetarian">Vegetarisch</button>
-    </div>
-    <div id="search-results" class="search-results" aria-live="polite"></div>
-  </section>
-
-  <!-- ============================================================ Verlauf -->
-  <section id="tab-history" class="tab" data-tab="history" hidden>
-    <div id="stats" class="stats"></div>
-    <div class="chips" id="history-filter" role="radiogroup" aria-label="Filter">
-      <button type="button" class="chip on" data-f="all">Alle</button>
-      <button type="button" class="chip" data-f="fav">★ Favoriten</button>
-      <button type="button" class="chip" data-f="vegan">Vegan</button>
-      <button type="button" class="chip" data-f="likely">Wahrsch. vegan</button>
-      <button type="button" class="chip" data-f="vegetarian">Vegetarisch</button>
-      <button type="button" class="chip" data-f="no">Nicht veg.</button>
-      <button type="button" class="chip" data-f="unknown">Unklar</button>
-    </div>
-    <ul id="history" class="list"></ul>
-    <p id="history-empty" class="empty">Noch nichts geprüft. Scanne einen Barcode, er erscheint dann hier.</p>
-    <div class="row-actions">
-      <button id="btn-export" type="button" class="secondary">Exportieren</button>
-      <button id="btn-clear" type="button" class="secondary danger">Verlauf löschen</button>
-    </div>
-  </section>
-
-  <!-- ============================================================ Zutaten -->
-  <section id="tab-ingredients" class="tab" data-tab="ingredients" hidden>
-    <p class="lead">Zutatenliste einfügen, abtippen oder – auf dem iPhone – lange ins Feld tippen und „Text scannen“ wählen – geprüft wird direkt auf diesem Gerät, auch ohne Netz. E-Nummern werden erkannt.</p>
-    <label class="sr-only" for="ing-text">Zutatenliste</label>
-    <textarea id="ing-text" class="textarea" rows="6" placeholder="z. B. Weizenmehl, Zucker, Vollmilchpulver, Emulgator E471, Aroma"></textarea>
-    <div id="ing-result" class="result" aria-live="polite"></div>
-    <details class="details">
-      <summary><span>E-Nummern-Lexikon</span><span class="chev" aria-hidden="true"><svg viewBox="0 0 7 12"><path d="M1 1l5 5-5 5"/></svg></span></summary>
-      <div class="details-body"><dl id="e-list" class="nutri"></dl></div>
-    </details>
-  </section>
+  <footer>Daten von <a href="https://de.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> · Robert Krause</footer>
 </main>
 
-<nav class="tabbar" aria-label="Bereiche">
-  <button type="button" data-go="scan" aria-current="page">
-    <svg viewBox="0 0 24 24"><path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16M8 8v8M11 8v8M14 8v8M17 8v8"/></svg>
-    <span>Scannen</span></button>
-  <button type="button" data-go="search">
-    <svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></svg>
-    <span>Suchen</span></button>
-  <button type="button" data-go="history">
-    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 7.5V12l3 2"/></svg>
-    <span>Verlauf</span></button>
-  <button type="button" data-go="ingredients">
-    <svg viewBox="0 0 24 24"><path d="M7 4h10M7 9h10M7 14h6M7 19h4"/><circle cx="18" cy="17" r="3"/></svg>
-    <span>Zutaten</span></button>
-</nav>
-
-<dialog id="info-dialog">
-  <h2>Über VeganCheck</h2>
-  <p>Die Produktdaten stammen aus der offenen Datenbank
-     <a href="https://de.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> (ODbL).
-     Die Einstufung beruht auf den dort hinterlegten Zutatenlisten und Siegeln. Fehlt die
-     Analyse, prüft VeganCheck den Zutatentext selbst.</p>
-  <p><strong>Keine Garantie.</strong> Rezepturen ändern sich, Einträge können fehlerhaft oder
-     unvollständig sein. Im Zweifel die Zutatenliste auf der Verpackung lesen – besonders bei
-     Allergien.</p>
-  <p>Alles läuft im Browser: keine Tracker, keine Cookies, kein Server. Verlauf und
-     Zwischenspeicher bleiben auf diesem Gerät.</p>
-  <p><strong>Tipp:</strong> Über „Teilen → Zum Home-Bildschirm“ wird VeganCheck zur App. Für iPhone gibt es außerdem eine native App mit mehr Funktionen.</p>
-  <button id="btn-close-info" class="primary wide" type="button">Fertig</button>
+<!-- Ein Sheet für Ergebnis, Verlauf, Zutaten und Info -->
+<dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
+  <div class="sheet-grabber" aria-hidden="true"></div>
+  <div class="sheet-bar">
+    <button id="sheet-back" class="glass-btn small" type="button" aria-label="Zurück" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5"/></svg>
+    </button>
+    <h2 id="sheet-title" class="sheet-title"></h2>
+    <div class="sheet-actions" id="sheet-actions"></div>
+    <button id="sheet-close" class="glass-btn small" type="button" aria-label="Schließen">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7 7 17"/></svg>
+    </button>
+  </div>
+  <div id="sheet-body" class="sheet-body"></div>
 </dialog>
 
 <div id="toast" class="toast" role="status" hidden></div>
 
-<footer>
-  <p>Daten von <a href="https://de.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a> · Robert Krause</p>
-</footer>
-
 <script src="rules.js"></script>
+<script src="verdict.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
