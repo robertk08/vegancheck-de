@@ -19,6 +19,7 @@
   --orange: #ff9500; --orange-ink: #9a5a00;
   --red: #ff3b30;    --red-ink: #c02a22;
   --gray: #8e8e93;   --gray-ink: #5b5b60;
+  --teal: #30b0c7;   --teal-ink: #0e7385;
 
   --tint: 11%;
   --r-card: 14px;
@@ -43,6 +44,7 @@
     --orange: #ff9f0a; --orange-ink: #ffb340;
     --red: #ff453a;    --red-ink: #ff6961;
     --gray: #98989d;   --gray-ink: #b0b0b6;
+    --teal: #40c8e0;   --teal-ink: #6fdcef;
 
     --tint: 7%;
     --shadow: none;
@@ -252,6 +254,9 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 .v-no      { background: color-mix(in srgb, var(--red) var(--tint), var(--card)); }
 .v-no h2   { color: var(--red-ink); }
 .v-no .glyph { background: var(--red); }
+.v-likely      { background: color-mix(in srgb, var(--teal) var(--tint), var(--card)); }
+.v-likely h2   { color: var(--teal-ink); }
+.v-likely .glyph { background: var(--teal); }
 .v-unknown      { background: var(--card); }
 .v-unknown h2   { color: var(--label); }
 .v-unknown .glyph { background: var(--gray); }
@@ -364,7 +369,7 @@ button:focus-visible, input:focus-visible, a:focus-visible {
 .chev { flex: none; width: 7px; height: 12px; color: var(--label-3); }
 .chev svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .d-vegan { background: var(--green); } .d-vegetarian { background: var(--orange); }
-.d-no { background: var(--red); } .d-unknown { background: var(--gray); }
+.d-likely { background: var(--teal); } .d-no { background: var(--red); } .d-unknown { background: var(--gray); }
 
 /* ------------------------------------------------------------ Sheet & Fuß */
 

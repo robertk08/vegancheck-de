@@ -2,7 +2,13 @@
    Daten: Open Food Facts (ODbL). Läuft vollständig im Browser. */
 'use strict';
 
-const API = 'https://world.openfoodfacts.org/api/v2/product/';
+// Lebensmittel zuerst; Kosmetik, Tierfutter und sonstige Produkte als Rückfall.
+const SOURCES = [
+  { hosts: ['https://world.openfoodfacts.org', 'https://de.openfoodfacts.org'], name: 'Open Food Facts', site: 'https://de.openfoodfacts.org' },
+  { hosts: ['https://world.openbeautyfacts.org'], name: 'Open Beauty Facts', site: 'https://de.openbeautyfacts.org' },
+  { hosts: ['https://world.openpetfoodfacts.org'], name: 'Open Pet Food Facts', site: 'https://de.openpetfoodfacts.org' },
+  { hosts: ['https://world.openproductsfacts.org'], name: 'Open Products Facts', site: 'https://de.openproductsfacts.org' }
+];
 const FIELDS = [
   'code', 'product_name', 'product_name_de', 'brands', 'quantity',
   'image_front_small_url', 'image_small_url',
@@ -18,7 +24,7 @@ const HISTORY_KEY = 'vc.history.v2';
 const OLD_HISTORY_KEY = 'vc.history.v1';
 const SETTINGS_KEY = 'vc.settings.v1';
 const HISTORY_MAX = 300;
-const CACHE_KEY = 'vc.products.v2';
+const CACHE_KEY = 'vc.products.v3';
 const CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
 
 const $ = (sel) => document.querySelector(sel);
@@ -55,11 +61,33 @@ const VERDICTS = {
     key: 'no', cls: 'v-no', glyph: GLYPHS.cross,
     title: 'Nicht vegetarisch', sub: 'Auch nicht vegan'
   },
+  likely: {
+    key: 'likely', cls: 'v-likely', glyph: GLYPHS.check,
+    title: 'Wahrscheinlich vegan', sub: 'Keine tierischen Zutaten erkennbar'
+  },
   unknown: {
     key: 'unknown', cls: 'v-unknown', glyph: GLYPHS.query,
     title: 'Unklar', sub: 'Zutaten nicht eindeutig'
   }
 };
+
+/* Zutaten, die Open Food Facts als „vielleicht tierisch“ markiert, die in
+   Deutschland aber fast immer pflanzlich sind. Sind nur solche im Spiel,
+   lautet das Ergebnis „Wahrscheinlich vegan“ statt „Unklar“. */
+const MOSTLY_PLANT = /aroma|aromen|flavou?r|lecithin|e ?322|emulgator|emulsifier|mono- und diglyceride|mono- and diglycerides|e ?471|zucker|sugar|wein|wine|essig|vinegar|vitamin|glycerin|e ?422|stearinsäure|stearic|e ?570|farbstoff|colou?r|säuerungsmittel|acidity|trennmittel|überzugsmittel|glazing/i;
+
+/* Kategorien als Rückfall, wenn es keine Zutatenliste gibt. */
+const CAT_NO = /^en:(meats?|.*-meats?|sausages|hams|poultry|fishes|seafood|.*-fish|fish-.*|gelatin|charcuterie|.*-sausages|bacon|.*-broths-of-meat)$/;
+const CAT_VEG = /^en:(dairies|milks?|cheeses|.*-cheeses|yogurts|butters|creams|eggs|honeys|.*-honeys|dairy-desserts|milk-chocolates|ice-creams)$/;
+const CAT_PLANT = /^en:(fruits|vegetables|.*-vegetables|fresh-fruits|legumes|plant-based-.*|cereals-and-potatoes|pastas|rices|nuts|seeds|vegetable-oils|olive-oils|.*-oils|sugars|coffees|teas|waters|.*-waters|fruit-juices|juices|.*-juices|soft-drinks|flours|spices|salts|jams|meat-alternatives|dark-chocolates|tofu|breads)$/;
+
+function categoryHint(product) {
+  const cats = product.categories_tags || [];
+  if (cats.some((c) => CAT_NO.test(c))) return 'no';
+  if (cats.some((c) => CAT_VEG.test(c))) return 'vegetarian';
+  if (cats.some((c) => CAT_PLANT.test(c))) return 'likely';
+  return null;
+}
 
 const glyphMarkup = (paths) =>
   `<div class="glyph"><svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg></div>`;
@@ -143,6 +171,9 @@ function assess(product) {
     // Open Food Facts hat nicht analysiert – Zutatentext selbst prüfen.
     const local = RULES.analyze(ingredientsText(product));
     verdict = VERDICTS[local.level];
+    if (local.level === 'unknown' && local.hits.every((h) => MOSTLY_PLANT.test(h.note) || MOSTLY_PLANT.test(h.text))) {
+      verdict = VERDICTS.likely;
+    }
     const names = (lvl) => local.hits.filter((h) => h.level === lvl).map((h) => h.text).slice(0, 8);
     if (local.level === 'vegan') reasons.push('Keine tierischen Zutaten im Zutatentext gefunden.');
     if (names('no').length) reasons.push('Nicht vegetarisch wegen: ' + names('no').join(', ') + '.');
@@ -160,7 +191,18 @@ function assess(product) {
       verdict = Object.assign({}, VERDICTS.unknown, {
         sub: vegetarianTag === 'yes' || vegetarianLabel ? 'Vegetarisch, vegan unklar' : VERDICTS.unknown.sub
       });
-      if (maybe.length) {
+      const hint = categoryHint(product);
+      const nameVegan = /\bvegan/i.test(productTitle(product));
+      if (maybe.length && maybe.every((m) => MOSTLY_PLANT.test(m)) && vegetarianTag !== 'maybe') {
+        verdict = VERDICTS.likely;
+        reasons.push('Nur ' + maybe.join(', ') + ' könnte tierisch sein – ist aber fast immer pflanzlich.');
+      } else if (!(product.ingredients || []).length && (hint || nameVegan)) {
+        // Keine Zutaten: Name oder Kategorie geben den Ausschlag.
+        const k = nameVegan ? 'likely' : hint;
+        verdict = VERDICTS[k];
+        reasons.push(nameVegan ? '„Vegan“ steht im Produktnamen.' : 'Abgeleitet aus der Produktkategorie.');
+        reasons.push('Keine Zutatenliste hinterlegt – im Zweifel Verpackung prüfen.');
+      } else if (maybe.length) {
         reasons.push('Nicht eindeutig: ' + maybe.join(', ') + ' – kann tierisch oder pflanzlich sein.');
       } else if (!(product.ingredients || []).length) {
         reasons.push('Keine Zutatenliste hinterlegt.');
@@ -197,27 +239,56 @@ function cacheWrite(code, product) {
   } catch (_) {}
 }
 
-async function lookup(code) {
-  const url = `${API}${encodeURIComponent(code)}.json?lc=de&cc=de&fields=${FIELDS}`;
-  const res = await fetch(url, { headers: { Accept: 'application/json' } });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error('HTTP ' + res.status);
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  const data = await res.json();
-  if (!data || data.status === 0 || !data.product) return null;
-  return data.product;
+/** Eine Quelle abfragen. Bei Überlastung (429/503) mit Pause erneut, abwechselnd über die Hosts. */
+async function lookup(source, code) {
+  let lastErr;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const host = source.hosts[attempt % source.hosts.length];
+    try {
+      const res = await fetch(`${host}/api/v2/product/${encodeURIComponent(code)}.json?lc=de&cc=de&fields=${FIELDS}`,
+        { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined });
+      if (res.status === 404) return null;
+      if (res.status === 429 || res.status >= 500) throw new Error('HTTP ' + res.status);
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (!data || data.status === 0 || !data.product) return null;
+      data.product._source = source.name;
+      data.product._site = source.site;
+      return data.product;
+    } catch (err) {
+      lastErr = err;
+      await sleep([400, 1200, 2500, 0][attempt]);
+    }
+  }
+  throw lastErr;
+}
+
+/** Codes, unter denen ein Produkt liegen kann (UPC-A ↔ EAN-13, EAN-13 mit führender Null). */
+function variants(code) {
+  const v = [code];
+  if (code.length === 12) v.push('0' + code);
+  if (code.length === 13 && code.startsWith('0')) v.push(code.slice(1));
+  if (code.length === 14 && code.startsWith('0')) v.push(code.slice(1));
+  return v;
 }
 
 async function fetchProduct(code) {
   const cached = cacheRead(code);
   if (cached) return cached;
 
-  let product = await lookup(code);
-  // US-Barcodes (UPC-A, 12 Ziffern) liegen dort oft mit führender Null als EAN-13.
-  if (!product && code.length === 12) product = await lookup('0' + code);
-
-  if (product) cacheWrite(code, product);
-  return product;
+  let failures = 0;
+  for (const source of SOURCES) {
+    for (const c of variants(code)) {
+      try {
+        const product = await lookup(source, c);
+        if (product) { cacheWrite(code, product); return product; }
+      } catch (_) { failures++; }
+    }
+  }
+  if (failures) throw new Error('offline');
+  return null;
 }
 
 /* ----------------------------------------------------------------- Ausgabe */
@@ -265,6 +336,7 @@ function renderProduct(code, product) {
       <div>
         <div class="name">${esc(productTitle(product))}</div>
         <div class="meta">${esc(meta || 'Barcode ' + code)}</div>
+        ${product._source && product._source !== 'Open Food Facts' ? `<div class="meta">Quelle: ${esc(product._source)}</div>` : ''}
       </div>
     </div>
     ${reasons.length ? `<div class="why">
@@ -274,7 +346,7 @@ function renderProduct(code, product) {
     <div class="actions">
       <button type="button" class="secondary" data-act="fav" data-code="${esc(code)}" aria-pressed="${isFav(code)}">${isFav(code) ? '★ Gemerkt' : '☆ Merken'}</button>
       <button type="button" class="secondary" data-act="share" data-code="${esc(code)}">Teilen</button>
-      <a class="secondary btn-link" href="https://de.openfoodfacts.org/produkt/${encodeURIComponent(code)}" target="_blank" rel="noopener">Bearbeiten</a>
+      <a class="secondary btn-link" href="${esc(product._site || 'https://de.openfoodfacts.org')}/produkt/${encodeURIComponent(code)}" target="_blank" rel="noopener">Bearbeiten</a>
     </div>
     ${detailsMarkup(product)}
     <div class="alts" id="alts" hidden></div>`;
@@ -344,15 +416,17 @@ async function check(code) {
     const product = await fetchProduct(code);
     if (!product) {
       renderMessage('Nicht gefunden',
-        `Kein Eintrag für ${esc(code)}.
+        `Kein Eintrag für ${esc(code)} – weder bei Lebensmitteln noch bei Kosmetik oder Tierfutter.<br><br>
+         <a href="#ingredients" data-ing-hint>Zutatenliste selbst prüfen</a> ·
          <a href="https://de.openfoodfacts.org/cgi/product.pl?type=add&code=${encodeURIComponent(code)}"
-            target="_blank" rel="noopener">Bei Open Food Facts ergänzen</a>`);
+            target="_blank" rel="noopener">Produkt eintragen</a>`);
       return;
     }
     renderProduct(code, product);
     lastProduct = { code, product };
   } catch (err) {
-    renderMessage('Keine Verbindung', 'Produktdaten konnten nicht geladen werden.');
+    renderMessage('Datenbank überlastet',
+      `Open Food Facts antwortet gerade nicht. <a href="#" data-retry="${esc(code)}">Erneut versuchen</a>`);
   }
 }
 
@@ -485,10 +559,10 @@ function renderHistory() {
 
   const n = (k) => list.filter((e) => e.v === k).length;
   const total = list.length || 1;
-  const parts = [['vegan', 'Vegan'], ['vegetarian', 'Vegetarisch'], ['no', 'Nicht veg.'], ['unknown', 'Unklar']];
+  const parts = [['vegan', 'Vegan'], ['likely', 'Wahrsch. vegan'], ['vegetarian', 'Vegetarisch'], ['no', 'Nicht veg.'], ['unknown', 'Unklar']];
   els.stats.hidden = list.length === 0;
   els.stats.innerHTML = `
-    <div class="stat-top"><b>${list.length}</b> Produkte geprüft · <b>${Math.round(n('vegan') / total * 100)}%</b> vegan</div>
+    <div class="stat-top"><b>${list.length}</b> Produkte geprüft · <b>${Math.round((n('vegan') + n('likely')) / total * 100)}%</b> vegan</div>
     <div class="bar-stack">${parts.map(([k]) => n(k) ? `<span class="d-${k}" style="flex:${n(k)}"></span>` : '').join('')}</div>
     <div class="legend">${parts.map(([k, l]) => `<span><i class="dot d-${k}"></i>${l} ${n(k)}</span>`).join('')}</div>`;
 }
@@ -821,6 +895,10 @@ els.form.addEventListener('submit', (e) => {
 
 // Ein Klick-Handler für alle Listen mit Produkten
 document.addEventListener('click', (e) => {
+  const retry = e.target.closest('[data-retry]');
+  if (retry) { e.preventDefault(); check(retry.dataset.retry); return; }
+  const ingHint = e.target.closest('[data-ing-hint]');
+  if (ingHint) { e.preventDefault(); go('ingredients'); $('#ing-text').focus(); return; }
   const act = e.target.closest('[data-act]');
   if (act) {
     const code = act.dataset.code;

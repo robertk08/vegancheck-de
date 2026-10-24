@@ -13,6 +13,9 @@ wenigstens **vegetarisch** ist.
 - **Zutaten-Check** – beliebige Zutatenliste einfügen, offline geprüft, inkl. E-Nummern-Lexikon
 - **Teilen** – Ergebnis als Link (`?code=…`) teilen
 - Eigene Auswertung des Zutatentexts, wenn Open Food Facts keine Analyse hat
+- **Mehr Treffer:** fünfte Stufe „Wahrscheinlich vegan“ (nur Aroma, Lecithin & Co. unklar),
+  Rückfall auf die Produktkategorie, Kosmetik/Tierfutter/sonstige Produkte über
+  Open Beauty, Pet Food und Products Facts, automatische Wiederholung bei überlasteter API
 
 **Live:** https://robertk08.github.io/vegancheck-de/
 
