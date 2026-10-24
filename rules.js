@@ -16,7 +16,11 @@ const RULES = (() => {
     // Gerichte und Sorten, die fast immer Fleisch oder Fisch enthalten
     'rentier', 'hirsch', 'reh', 'rippchen', 'ribs', 'rips', 'leberkäse', 'frikadelle',
     'bulette', 'döner', 'gyros', 'kebab', 'steak', 'schnitzel', 'gulasch', 'hackfleisch', 'mett',
-    'herrensalat', 'fleischsalat', 'surimi', 'kaviar', 'carne', 'chicken nuggets',
+    'herrensalat', 'fleischsalat', 'surimi', 'kaviar', 'carne', 'chicken nuggets', 'bolognese',
+    'cordon bleu', 'bürgermeisterstück', 'tafelspitz', 'schwarte', 'schwartenmagen', 'kassler', 'leberknödel',
+    // Französisch, Italienisch, Spanisch, Polnisch (Importware)
+    'viande', 'viande de porc', 'poulet', 'boeuf', 'bœuf', 'jambon', 'poisson', 'maiale', 'pollo', 'manzo',
+    'prosciutto', 'tonno', 'pesce', 'mięso', 'wieprzow', 'kurczak', 'jamón', 'cerdo', 'atún',
     // Hartkäse mit tierischem Lab
     'parmesan', 'parmigiano', 'grana padano', 'pecorino',
     // Englisch (Importware, USDA-Daten)
@@ -34,7 +38,10 @@ const RULES = (() => {
     // Käse- und Milchsorten
     'gouda', 'gruyère', 'gruyere', 'emmentaler', 'cheddar', 'mozzarella', 'feta', 'camembert',
     'brie', 'edamer', 'tilsiter', 'mascarpone', 'ricotta', 'skyr', 'schmand', 'crème fraîche',
-    'eiscreme', 'pudding', 'trinkschokolade', 'mayonnaise', 'remoulade',
+    'eiscreme', 'pudding', 'trinkschokolade', 'mayonnaise', 'remoulade', 'raclette', 'halloumi',
+    'lait entier', 'lait écrémé', 'au lait', 'lait en poudre', 'poudre de lait', 'fromage', 'beurre',
+    'yaourt', 'œuf', 'oeuf', 'formaggio', 'latte intero', 'burro', 'uovo', 'leche', 'queso', 'mleko',
+    'mléko', 'jogurt', 'iogurte', 'yogur',
     // Englisch
     'milk', 'cream', 'cheese', 'whey', 'yogurt', 'egg', 'eggs', 'honey', 'beeswax', 'nonfat dry milk'
   ];
@@ -108,13 +115,13 @@ const RULES = (() => {
     'roggen', 'weizen', 'gerste', 'buchweizen', 'soja', 'hummus', 'falafel', 'sauerteig'
   ];
   // Wein & Co. werden oft mit Gelatine, Hausenblase, Kasein oder Eiweiß geklärt.
-  const FINED = /(wein|wine|champagner|sekt|prosecco|cava|cidre|cider)/;
+  const FINED = /(wein|wine|champagner|sekt|prosecco|cava|cidre|cider|riesling|rosé|chardonnay|merlot|burgunder|sauvignon|cabernet|dornfelder|silvaner|müller-thurgau|lambrusco|chianti|rioja|primitivo)/;
 
   // Wörter, die nur so aussehen, als wären sie tierisch
-  const FALSE_FRIENDS = /(honigmelone|honeymelon|honey ?melon|honigbusch|butternut|butterbohne|butterkeks ?vegan|kokosnussmilch|leberblümchen|fischerman|eisbergsalat|eisen|eis(?=tee)|zuckerei)/g;
+  const FALSE_FRIENDS = /(joghurtkulturen|joghurtkultur|milchsäure|lactic acid|honigmelone|honeymelon|honey ?melon|honigbusch|butternut|butterbohne|butterkeks ?vegan|kokosnussmilch|leberblümchen|fischerman|eisbergsalat|eisen|eis(?=tee)|zuckerei)/g;
 
   // Zusammengesetzte Lebensmittel: ein Pflanzenwort im Namen beweist hier nichts.
-  const COMPOSITE = /(creme|cream|sahne|dessert|pudding|riegel|torte|kuchen|gebäck|keks|schoko|choco|glace|drink|shake|protein|suppe|soße|sauce|salat|dip|pesto|fertig|gericht|menü|pizza|snack|müsli|porridge|vitalkost|diät)/;
+  const COMPOSITE = /(creme|cream|sahne|dessert|pudding|riegel|torte|kuchen|gebäck|keks|cracker|eintopf|pfanne|auflauf|(?<!frucht)aufstrich|schoko|choco|glace|drink|shake|protein|suppe|soße|sauce|salat|dip|pesto|fertig|gericht|menü|pizza|snack|müsli|porridge|vitalkost|diät)/;
 
   const esc = (w) => w.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 
@@ -191,6 +198,7 @@ const RULES = (() => {
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
   const isFined = (name) => FINED.test(name.toLowerCase());
+  const isComposite = (name) => COMPOSITE.test(name.toLowerCase());
 
   // Rohdaten für die iOS-App (tools/export-rules.mjs schreibt daraus rules.json)
   const data = {
@@ -199,5 +207,5 @@ const RULES = (() => {
     falseFriends: FALSE_FRIENDS.source, composite: COMPOSITE.source
   };
 
-  return { analyze, plantFood, isFined, E, data };
+  return { analyze, plantFood, isFined, isComposite, E, data };
 })();

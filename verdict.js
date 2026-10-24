@@ -65,7 +65,8 @@ function fallbackHint(product) {
     return { key: byName.level, reason: `Laut Produktname: ${byName.hits.filter((h) => h.level !== 'maybe').map((h) => h.text).join(', ')}.` };
   }
   const cat = categoryHint(product);
-  if (cat) return { key: cat, reason: 'Abgeleitet aus der Produktkategorie.' };
+  // „Gnocchi mit Rucolacreme“: Kategorie pflanzlich, Gericht aber womöglich mit Sahne
+  if (cat && !(cat === 'likely' && RULES.isComposite(name))) return { key: cat, reason: 'Abgeleitet aus der Produktkategorie.' };
   // Kategorien in anderen Sprachen (z. B. „de:eier-aus-ökologischer-erzeugung“) als Text prüfen
   const catText = (product.categories_tags || []).map((c) => c.replace(/^[a-z]{2}:/, '').replace(/-/g, ' ')).join(', ');
   const byCat = RULES.analyze(catText);
@@ -211,6 +212,14 @@ function assess(product) {
     }
   }
 
+  // Zutaten da, aber nicht auswertbar: eindeutige Kategorien (Käse, Fleisch, Fisch) entscheiden trotzdem.
+  if (verdict.key === 'unknown') {
+    const cat = categoryHint(product);
+    if (cat === 'no' || cat === 'vegetarian') {
+      verdict = VERDICTS[cat];
+      reasons.push('Abgeleitet aus der Produktkategorie.');
+    }
+  }
   // Nichts Belastbares gefunden: Wie sind gleichnamige Produkte eingestuft?
   const sim = product._similar;
   if (verdict.key === 'unknown' && sim) {
