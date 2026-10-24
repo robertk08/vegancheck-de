@@ -40,5 +40,19 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "shortcuts": [
+    {
+      "name": "Produkt suchen",
+      "url": "./#search"
+    },
+    {
+      "name": "Verlauf",
+      "url": "./#history"
+    },
+    {
+      "name": "Zutaten prüfen",
+      "url": "./#ingredients"
+    }
   ]
 }

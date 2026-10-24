@@ -1,7 +1,18 @@
 # VeganCheck
 
 Barcode scannen und sofort sehen, ob ein Produkt **vegan** ist – und wenn nicht, ob es
-wenigstens **vegetarisch** ist. Mehr macht die App bewusst nicht.
+wenigstens **vegetarisch** ist.
+
+## Funktionen
+
+- **Scannen** – Barcode per Kamera (jede Ausrichtung, Taschenlampe, Dauerscan) oder Nummer eintippen
+- **Suchen** – Produkte nach Name oder Marke finden, Filter „nur vegan“ / „vegetarisch“
+- **Vegane Alternativen** – zu jedem nicht-veganen Produkt passende vegane Produkte derselben Kategorie
+- **Nutri-Score, NOVA, Eco-Score, Allergene und Spuren** auf einen Blick
+- **Verlauf** mit bis zu 300 Einträgen, Favoriten, Filter, Statistik und CSV-Export
+- **Zutaten-Check** – beliebige Zutatenliste einfügen, offline geprüft, inkl. E-Nummern-Lexikon
+- **Teilen** – Ergebnis als Link (`?code=…`) teilen
+- Eigene Auswertung des Zutatentexts, wenn Open Food Facts keine Analyse hat
 
 **Live:** https://robertk08.github.io/vegancheck-de/
 
@@ -46,7 +57,8 @@ Reine statische Seite, kein Backend, kein Build-Schritt, keine Tracker.
 | Datei | Zweck |
 | --- | --- |
 | `index.html` | Seitengerüst |
-| `app.js` | Scanner, Abfrage, Einstufung, Verlauf |
+| `app.js` | Scanner, Abfrage, Suche, Einstufung, Verlauf |
+| `rules.js` | Lokale Zutatenprüfung und E-Nummern |
 | `styles.css` | Gestaltung inkl. Dunkelmodus |
 | `sw.js`, `manifest.webmanifest` | PWA und Offline-Hülle |
 | `vendor/` | ZXing (Apache-2.0), lokal eingebunden |

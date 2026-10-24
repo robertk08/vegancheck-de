@@ -1,9 +1,9 @@
 /* Offline-Hülle: die App startet auch ohne Netz, Produktdaten brauchen Verbindung.
    Netz zuerst, Cache als Rückfall – sonst bliebe ein Besucher für immer auf der
    Fassung hängen, die er beim ersten Besuch geladen hat. */
-const CACHE = 'vegancheck-v3';
+const CACHE = 'vegancheck-v4';
 const SHELL = [
-  './', 'index.html', 'styles.css', 'app.js',
+  './', 'index.html', 'styles.css', 'rules.js', 'app.js',
   'icon.svg', 'manifest.webmanifest', 'vendor/zxing-0.21.3.min.js'
 ];
 
