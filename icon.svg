@@ -1,23 +1,20 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="VeganCheck">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Gleiches Motiv wie das App-Icon (ios/VeganCheck/AppIcon.icon), flach für Browser und Home-Bildschirm -->
   <defs>
-    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#4cd964"/>
-      <stop offset="1" stop-color="#28b44c"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6bd977"/>
+      <stop offset="1" stop-color="#1c944c"/>
     </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="22" flood-color="#0b4a24" flood-opacity=".35"/>
+    </filter>
   </defs>
-  <rect width="512" height="512" rx="114" fill="url(#g)"/>
-  <g fill="#ffffff">
-    <rect x="124" y="146" width="20" height="148" rx="7"/>
-    <rect x="160" y="146" width="12" height="148" rx="6"/>
-    <rect x="188" y="146" width="26" height="148" rx="8"/>
-    <rect x="230" y="146" width="12" height="148" rx="6"/>
-    <rect x="258" y="146" width="20" height="148" rx="7"/>
-    <rect x="294" y="146" width="12" height="148" rx="6"/>
-    <rect x="322" y="146" width="26" height="148" rx="8"/>
-    <rect x="364" y="146" width="20" height="148" rx="7"/>
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <g filter="url(#shadow)">
+    <g transform="translate(548 476) rotate(-45) scale(1.1)">
+      <path fill="#ffffff" d="M -300 0 C -160 -235, 160 -235, 300 0 C 160 235, -160 235, -300 0 Z"/>
+      <path fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round" d="M -250 0 C -300 6, -340 14, -378 34"/>
+    </g>
   </g>
-  <path d="M148 350 l72 70 l150 -152" fill="none" stroke="#31bc53" stroke-width="74"
-        stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M148 350 l72 70 l150 -152" fill="none" stroke="#ffffff" stroke-width="44"
-        stroke-linecap="round" stroke-linejoin="round"/>
+  <path fill="none" stroke="#1fa34e" stroke-width="66" stroke-linecap="round" stroke-linejoin="round" d="M 432 492 L 512 572 L 668 416"/>
 </svg>
