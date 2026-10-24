@@ -18,11 +18,11 @@ const VERDICTS = {
   },
   vegetarian: {
     key: 'vegetarian', cls: 'v-vegetarian', glyph: GLYPHS.bang,
-    title: 'Vegetarisch', sub: 'Nicht vegan'
+    title: 'Nicht vegan', sub: 'Aber vegetarisch'
   },
   no: {
     key: 'no', cls: 'v-no', glyph: GLYPHS.cross,
-    title: 'Nicht vegetarisch', sub: 'Auch nicht vegan'
+    title: 'Nicht vegan', sub: 'Auch nicht vegetarisch'
   },
   likely: {
     key: 'likely', cls: 'v-likely', glyph: GLYPHS.check,

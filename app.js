@@ -444,13 +444,14 @@ function renderProduct(body, view, code, p) {
       </div>
       ${reasons.length ? `<ul class="reasons">${reasons.map((r) => `<li>${esc(r)}</li>`).join('')}</ul>` : ''}
     </div>
+    ${verdict.key === 'unknown' ? `<div class="btn-col">${photoButton('Zutatenliste fotografieren und prüfen')}</div><div id="photo-result"></div>` : ''}
     <div class="actions">
       <button type="button" class="action" data-fav="${esc(code)}" aria-pressed="${isFav(code)}">${ICON.star}<span>${isFav(code) ? 'Gemerkt' : 'Merken'}</span></button>
       <button type="button" class="action" data-share="${esc(code)}">${ICON.share}<span>Teilen</span></button>
       <a class="action" href="${esc(p._site || 'https://de.openfoodfacts.org')}${p._source === 'USDA FoodData Central' ? '' : '/produkt/' + encodeURIComponent(code)}" target="_blank" rel="noopener">${ICON.edit}<span>${p._source === 'USDA FoodData Central' ? 'Quelle' : 'Korrigieren'}</span></a>
     </div>
-    <section id="alts-wrap" hidden><span class="section-title">Vegane Alternativen</span><div class="alts" id="alts"></div></section>
     ${detailsMarkup(p)}
+    <section id="alts-wrap" hidden><span class="section-title">Vegane Alternativen</span><div class="alts" id="alts"></div></section>
     <p class="footnote">Ohne Gewähr – Rezepturen ändern sich. Im Zweifel die Verpackung lesen.</p>`;
 
   addHistory(code, p, verdict.key);
@@ -544,18 +545,59 @@ async function loadAlternatives(p, view) {
   } catch (_) { /* Alternativen sind nur ein Extra */ }
 }
 
+/** Kamera-Knopf, der ein Foto der Zutatenliste aufnimmt und auf dem Gerät prüft. */
+const photoButton = (label = 'Zutatenliste fotografieren') => `
+  <label class="btn wide photo-btn">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.6l1.4-2h5l1.4 2h1.6A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
+    ${label}
+    <input type="file" accept="image/*" capture="environment" data-photo hidden>
+  </label>`;
+
 function renderNotFound(body, code) {
-  $('#sheet-title').textContent = 'Nicht gefunden';
+  $('#sheet-title').textContent = 'Noch nicht erfasst';
   body.innerHTML = `
     ${heroMarkup(VERDICTS.unknown, 'Noch nicht erfasst',
-      `Barcode ${esc(code)} steht in keiner der offenen Datenbanken. Prüfe die Zutatenliste selbst – das geht in Sekunden.`)}
+      'Dieses Produkt kennt noch keine Datenbank. Fotografiere die Zutatenliste – VeganCheck prüft sie sofort.')}
     <div class="btn-col">
-      <button type="button" class="btn wide" data-open="ingredients">Zutatenliste prüfen</button>
-      <a class="btn secondary wide" href="https://de.openfoodfacts.org/cgi/product.pl?type=add&code=${encodeURIComponent(code)}" target="_blank" rel="noopener">Produkt eintragen</a>
+      ${photoButton()}
+      <a class="btn secondary wide" href="https://de.openfoodfacts.org/cgi/product.pl?type=add&code=${encodeURIComponent(code)}" target="_blank" rel="noopener">Produkt für alle eintragen</a>
     </div>
+    <div id="photo-result"></div>
     <p class="footnote">Gesucht in Open Food Facts, Open Beauty Facts, Open Pet Food Facts, Open Products Facts und USDA FoodData Central.</p>`;
   haptic([20, 60, 20]);
 }
+
+/** Foto aufgenommen: lesen, prüfen, Ergebnis direkt im Sheet zeigen. */
+async function checkPhoto(file) {
+  const box = $('#photo-result') || (() => {
+    const d = document.createElement('div'); d.id = 'photo-result';
+    (document.querySelector('.photo-btn') || sheetBody.firstChild).insertAdjacentElement('afterend', d); return d;
+  })();
+  box.innerHTML = '<div class="searching"><span class="spinner"></span>Lese die Zutatenliste …</div>';
+  try {
+    if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+    if (!ocrWorker) ocrWorker = await Tesseract.createWorker(['deu', 'eng', 'fra']);
+    const { data } = await ocrWorker.recognize(file);
+    // Beim eigenen Foto kann die Überschrift fehlen – dann den ganzen Text nehmen.
+    const text = cleanOcr(data.text || '') || (data.text || '').replace(/\s+/g, ' ').trim();
+    if (!text || RULES.knownWords(text) < 2) {
+      box.innerHTML = '<p class="empty"><b>Nicht lesbar</b>Halte die Kamera näher und gerade auf die Zutatenliste und versuche es noch einmal.</p>';
+      return;
+    }
+    box.innerHTML = '';
+    const holder = document.createElement('div');
+    box.appendChild(holder);
+    renderIngredientResult(text, holder);
+    box.insertAdjacentHTML('beforeend', `<p class="footnote" style="margin-top:10px">Gelesen: „${esc(text.slice(0, 160))}${text.length > 160 ? '…' : ''}“</p>`);
+    haptic(15);
+  } catch (_) {
+    box.innerHTML = '<p class="empty"><b>Foto konnte nicht gelesen werden</b>Bitte noch einmal versuchen.</p>';
+  }
+}
+
+document.addEventListener('change', (e) => {
+  if (e.target.matches('[data-photo]') && e.target.files[0]) checkPhoto(e.target.files[0]);
+});
 
 let shownCode = '';
 
@@ -621,8 +663,8 @@ function ingredientsView() {
   };
 }
 
-function renderIngredientResult(text) {
-  const box = $('#ing-result');
+function renderIngredientResult(text, target) {
+  const box = target || $('#ing-result');
   if (!text.trim()) { box.innerHTML = ''; return; }
   let { level, hits } = RULES.analyze(text);
   if (level === 'unknown' && hits.every((h) => MOSTLY_PLANT.test(h.text) || MOSTLY_PLANT.test(h.note))) level = 'likely';
@@ -641,7 +683,7 @@ function infoView() {
       body.innerHTML = `
         <section><span class="section-title">Ergebnisse</span><ul class="list">
           ${['vegan', 'likely', 'vegetarian', 'no', 'unknown'].map((k) => `<li><div class="static"><span class="dot d-${k}"></span>
-            <span class="row-text"><span>${VERDICTS[k].title}</span><small>${{
+            <span class="row-text"><span>${SHORT[k]}</span><small>${{
               vegan: 'Siegel oder alle Zutaten pflanzlich', likely: 'Nur Aroma, Lecithin & Co. offen',
               vegetarian: 'Enthält z. B. Milch, Ei oder Honig', no: 'Fleisch, Fisch, Gelatine …', unknown: 'Zu wenige Angaben'
             }[k]}</small></span></div></li>`).join('')}
@@ -949,6 +991,15 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) close
 /* ================================================================= Start */
 
 renderRecent();
+
+// Kamera schon einmal erlaubt? Dann direkt scannen – kein zusätzlicher Tipp im Laden.
+(async () => {
+  try {
+    const perm = await navigator.permissions.query({ name: 'camera' });
+    if (perm.state === 'granted' && !new URLSearchParams(location.search).get('code') && !location.hash) openScanner();
+  } catch (_) { /* Safari ohne Permissions-API: Tippen genügt */ }
+})();
+
 function route() {
   const code = new URLSearchParams(location.search).get('code');
   if (code && /^\d{6,14}$/.test(code)) check(code);

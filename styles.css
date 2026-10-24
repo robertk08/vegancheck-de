@@ -96,7 +96,7 @@ main {
 .large-title h1 { margin: 0; font-size: 34px; line-height: 41px; font-weight: 700; letter-spacing: -.012em; }
 
 .circle-btn, .glass-btn {
-  width: 36px; height: 36px; border-radius: 50%;
+  width: 36px; height: 36px; position: relative; border-radius: 50%;
   display: grid; place-items: center; flex: none;
   transition: transform .25s var(--spring), background-color .2s;
 }
@@ -464,3 +464,12 @@ footer a { color: inherit; }
 
 .ocr-note { display: flex; align-items: center; gap: 10px; margin: 0; padding: 12px 16px; border-top: .5px solid var(--sep); font-size: 15px; color: var(--label-2); }
 .ocr-note .spinner { width: 16px; height: 16px; }
+
+/* Mindestens 44 pt Trefferfläche, auch wenn der Knopf kleiner aussieht */
+.circle-btn::after, .glass-btn.small::after, .group-head .link::after { content: ""; position: absolute; inset: -6px; }
+.group-head .link { position: relative; padding: 4px 0; }
+
+.photo-btn { cursor: pointer; }
+.photo-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linejoin: round; }
+#photo-result:empty { display: none; }
+#photo-result { margin-top: 16px; }
