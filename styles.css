@@ -122,9 +122,13 @@ main {
   transition: aspect-ratio .45s var(--ease), background-color .3s;
   isolation: isolate;
 }
-.camera.live { aspect-ratio: 3 / 4; background: #000; }
 .camera.collapsed { display: none; }
-@media (max-height: 740px) { .camera.live { aspect-ratio: 1 / 1; } }
+/* Scannen im Vollbild wie die Kamera-App; das Ergebnis liegt halbhoch darüber. */
+.camera.live {
+  position: fixed; inset: 0; z-index: 20; aspect-ratio: auto;
+  border-radius: 0; background: #000;
+}
+body.scanning { overflow: hidden; }
 #video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0; transition: opacity .3s; }
 .camera.live #video { opacity: 1; }
 
@@ -148,7 +152,8 @@ main {
 .camera-hint { font-size: 15px; color: var(--label-2); padding: 0 24px; }
 
 .reticle {
-  position: absolute; left: 12%; right: 12%; top: 33%; bottom: 33%;
+  position: absolute; left: 50%; top: 42%; width: min(78vw, 340px); height: min(46vw, 200px);
+  transform: translate(-50%, -50%); transition: top .45s var(--ease);
   border-radius: 22px; display: none;
   box-shadow: 0 0 0 100vmax rgba(0, 0, 0, .3);
 }
@@ -163,7 +168,10 @@ main {
         var(--m) bottom left / 36px 36px no-repeat, var(--m) bottom right / 36px 36px no-repeat;
 }
 .camera.live .reticle { display: block; }
+body.has-result .reticle { top: 24%; }
+body.has-result .camera-status { display: none !important; }
 .camera.hit .reticle::before { border-color: var(--green); }
+.camera.hit .reticle { transform: translate(-50%, -50%) scale(.96); }
 .sweep {
   position: absolute; left: 10%; right: 10%; top: 50%; height: 2px; border-radius: 2px;
   background: var(--green); box-shadow: 0 0 14px var(--green);
@@ -171,12 +179,15 @@ main {
 }
 @keyframes sweep { 0%, 100% { transform: translateY(-24px); opacity: .4; } 50% { transform: translateY(24px); opacity: 1; } }
 
-.camera-tools { position: absolute; top: 12px; right: 12px; display: none; gap: 10px; z-index: 2; }
+.camera-tools {
+  position: absolute; top: calc(env(safe-area-inset-top) + 12px); left: 16px; right: 16px; z-index: 2;
+  display: none; justify-content: space-between; flex-direction: row-reverse;
+}
 .camera.live .camera-tools { display: flex; }
 .camera .glass-btn { color: #fff; background: rgba(40, 40, 42, .5); box-shadow: inset 0 0 0 .5px rgba(255, 255, 255, .2); }
 #btn-torch[aria-pressed="true"] { background: #fff; color: #000; }
 .camera-status {
-  position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%); z-index: 2;
+  position: absolute; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 28px); transform: translateX(-50%); z-index: 2;
   padding: 8px 14px; border-radius: 99px; font-size: 14px; font-weight: 500; color: #fff;
   background: rgba(40, 40, 42, .55); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
   white-space: nowrap; display: none;
@@ -275,6 +286,8 @@ footer a { color: inherit; }
   flex-direction: column;
 }
 .sheet[open] { display: flex; animation: sheet-in .5s var(--ease); }
+.sheet.half { z-index: 30; height: 58dvh; box-shadow: 0 -10px 40px rgba(0, 0, 0, .35); }
+@media (min-width: 700px) { .sheet.half { inset: auto 0 0; border-radius: 32px 32px 0 0; height: 58dvh; } }
 .sheet.closing { animation: sheet-out .3s var(--ease) forwards; }
 .sheet.dragging { animation: none; transition: none; }
 @keyframes sheet-in { from { transform: translateY(100%); } }
@@ -446,3 +459,6 @@ footer a { color: inherit; }
   animation: toast-in .45s var(--spring);
 }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 16px) scale(.9); } }
+
+.ocr-note { display: flex; align-items: center; gap: 10px; margin: 0; padding: 12px 16px; border-top: .5px solid var(--sep); font-size: 15px; color: var(--label-2); }
+.ocr-note .spinner { width: 16px; height: 16px; }

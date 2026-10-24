@@ -11,7 +11,8 @@ const FIELDS = [
   'labels_tags', 'ingredients_analysis_tags', 'ingredients',
   'ingredients_text_de', 'ingredients_text',
   'nutriments', 'allergens_tags', 'traces_tags',
-  'nutriscore_grade', 'nova_group', 'categories_tags', 'categories_hierarchy'
+  'nutriscore_grade', 'nova_group', 'categories_tags', 'categories_hierarchy',
+  'image_ingredients_url', 'generic_name', 'generic_name_de'
 ].join(',');
 const LIST_FIELDS = 'code,product_name,product_name_de,brands,quantity,image_front_small_url,labels_tags,ingredients_analysis_tags';
 
@@ -270,14 +271,22 @@ function showView(view) {
   view.render(sheetBody, view);
 }
 
-function openSheet(view, { push = false } = {}) {
+/* Zwei Arten: modal (normal) oder halbhoch über der laufenden Kamera –
+   dann bleibt der Scanner aktiv und ein neuer Code ersetzt den Inhalt. */
+function openSheet(view, { push = false, half = false } = {}) {
   if (!push) stack.length = 0;
   stack.push(view);
   showView(view);
+  const wantModal = !half;
+  if (sheet.open && sheet.classList.contains('half') === wantModal) {
+    sheet.close();                       // Art wechseln
+  }
+  sheet.classList.toggle('half', half);
+  document.body.classList.toggle('has-result', half);
   if (!sheet.open) {
     sheet.classList.remove('closing');
-    sheet.showModal();
-    document.body.classList.add('sheet-open');
+    if (half) sheet.show(); else sheet.showModal();
+    document.body.classList.toggle('sheet-open', !half);
   }
 }
 
@@ -288,7 +297,9 @@ function closeSheet() {
     sheet.classList.remove('closing');
     sheet.style.transform = '';
     sheet.close();
-    document.body.classList.remove('sheet-open');
+    sheet.classList.remove('half');
+    document.body.classList.remove('sheet-open', 'has-result');
+    shownCode = '';
     stack.length = 0;
     if (location.search) history.replaceState(null, '', location.pathname);
   };
@@ -429,7 +440,64 @@ function renderProduct(body, view, code, p) {
 
   addHistory(code, p, verdict.key);
   view.product = p;
+  if (!ingredientsText(p) && !(p.ingredients || []).length && p.image_ingredients_url && !p._ocrTried) readPhoto(code, p, view);
+  else if (verdict.key === 'unknown' && !p._similar && !p._similarTried) askSimilar(code, p, view);
   if (verdict.key !== 'vegan' && verdict.key !== 'likely') loadAlternatives(p, view);
+}
+
+/* Viele Produkte haben ein Foto der Zutatenliste, aber keinen abgetippten Text.
+   Dann liest Tesseract es direkt im Browser – erst bei Bedarf geladen. */
+let ocrWorker = null;
+async function readPhoto(code, p, view) {
+  const card = $('.product-card', sheetBody);
+  const note = document.createElement('p');
+  note.className = 'ocr-note';
+  note.innerHTML = '<span class="spinner"></span>Lese das Foto der Zutatenliste …';
+  if (card) card.appendChild(note);
+  p._ocrTried = true;
+  try {
+    if (!window.Tesseract) await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js');
+    if (!ocrWorker) ocrWorker = await Tesseract.createWorker(['deu', 'eng']);
+    const url = p.image_ingredients_url.replace(/\.\d+\.jpg$/, '.full.jpg');
+    const { data } = await ocrWorker.recognize(url);
+    const text = cleanOcr(data.text || '');
+    if (text) { p._ocr = text; cacheWrite(code, p); }
+  } catch (_) { /* Foto nicht lesbar – Ergebnis bleibt */ }
+  if (stack[stack.length - 1] !== view) return;
+  if (p._ocr) renderProduct(sheetBody, view, code, p);
+  else { note.remove(); if (assess(p).verdict.key === 'unknown') askSimilar(code, p, view); }
+}
+
+/** Immer noch unklar? Gleichnamige Produkte befragen – nur bei klarer Mehrheit. */
+async function askSimilar(code, p, view) {
+  p._similarTried = true;
+  const stop = new Set(['bio', 'mit', 'und', 'der', 'die', 'das', 'von', 'für']);
+  const words = productTitle(p).toLowerCase().split(/[^\p{L}]+/u).filter((w) => w.length >= 3 && !stop.has(w)).slice(0, 3);
+  if (!words.length) return;
+  try {
+    const hits = await searchProducts(words.join(' '), [['countries', 'en:germany']], 20);
+    const rated = hits.filter((x) => x.code !== p.code).map(quickVerdict).filter((v) => v !== 'unknown')
+      .map((v) => (v === 'likely' ? 'vegan' : v));
+    if (rated.length < 3) return;
+    const counts = {};
+    rated.forEach((v) => { counts[v] = (counts[v] || 0) + 1; });
+    const [key, n] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    if (n / rated.length < 0.75) return;
+    p._similar = { key, count: n, total: rated.length };
+    cacheWrite(code, p);
+    if (stack[stack.length - 1] === view) renderProduct(sheetBody, view, code, p);
+  } catch (_) { /* Suche überlastet – bleibt „Unklar“ */ }
+}
+
+/** Nur den Teil ab „Zutaten:“ behalten, Nährwerte usw. abschneiden. */
+function cleanOcr(raw) {
+  let t = raw.replace(/\s+/g, ' ');
+  const start = t.search(/(zutaten|ingredients|ingrédients)\s*:/i);
+  if (start >= 0) t = t.slice(start).replace(/^[^:]*:/, '');
+  const end = t.search(/(nährwert|durchschnittlich|nutrition|mindestens haltbar|kann spuren)/i);
+  if (end > 0) t = t.slice(0, end);
+  t = t.trim();
+  return t.length >= 8 ? t : '';
 }
 
 async function loadAlternatives(p, view) {
@@ -462,11 +530,14 @@ function renderNotFound(body, code) {
   haptic([20, 60, 20]);
 }
 
+let shownCode = '';
+
 function check(code) {
-  closeScanner();
   $('#q').blur();
+  shownCode = code;
   history.replaceState(null, '', `${location.pathname}?code=${code}`);
-  openSheet(productView(code));
+  // Läuft die Kamera, bleibt sie an: Ergebnis halbhoch darüber.
+  openSheet(productView(code), { half: !!stream });
 }
 
 /* ========================================================= Weitere Sheets */
@@ -591,11 +662,11 @@ function onQuery(immediate) {
   const digits = value.replace(/[\s-]/g, '');
 
   if (/^\d+$/.test(digits)) {
-    box.innerHTML = `<ul class="list icons"><li><button type="button" class="row" data-code="${esc(digits)}" ${digits.length < 8 ? 'disabled style="opacity:.5"' : ''}>
+    box.innerHTML = `<ul class="list icons"><li><button type="button" class="row" data-code="${esc(digits)}" ${digits.length < 8 || digits.length > 14 ? 'disabled style="opacity:.5"' : ''}>
       <span class="row-icon ri-green">${ICON.scan}</span>
-      <span class="row-text"><span>Barcode ${esc(digits)} prüfen</span><small>${digits.length < 8 ? 'Meist 8 oder 13 Ziffern' : 'Eingabetaste oder tippen'}</small></span>
+      <span class="row-text"><span>Barcode ${esc(digits)} prüfen</span><small>${digits.length < 8 || digits.length > 14 ? 'Barcodes haben 8 bis 14 Ziffern' : 'Eingabetaste oder tippen'}</small></span>
       <span class="chev"></span></button></li></ul>`;
-    if (immediate && digits.length >= 8) check(digits);
+    if (immediate && digits.length >= 8 && digits.length <= 14) check(digits);
     return;
   }
 
@@ -720,7 +791,15 @@ function setStatus(text) {
 }
 
 function closeScanner() {
+  const wasLive = !!stream;
   camera.classList.remove('live', 'hit');
+  document.body.classList.remove('scanning');
+  if (wasLive && sheet.open && sheet.classList.contains('half')) {
+    // Ergebnis bleibt offen, jetzt als normales Sheet
+    sheet.close(); sheet.classList.remove('half');
+    document.body.classList.remove('has-result');
+    sheet.showModal(); document.body.classList.add('sheet-open');
+  }
   $('#btn-torch').hidden = true;
   torchTrack = null;
   if (loop) { cancelAnimationFrame(loop); loop = null; }
@@ -728,15 +807,20 @@ function closeScanner() {
   video.srcObject = null;
 }
 
+let lastHit = { code: '', t: 0 };
+
+/** Treffer: Ergebnis zeigen, Kamera läuft weiter. Gibt nie „stopp“ zurück. */
 function detected(raw) {
   const code = String(raw || '').replace(/\D/g, '');
-  if (code.length < 8) return false;
+  if (code.length < 8 || code === shownCode) return false;
+  if (code === lastHit.code && Date.now() - lastHit.t < 2500) return false;
+  lastHit = { code, t: Date.now() };
   camera.classList.add('hit');
+  setTimeout(() => camera.classList.remove('hit'), 450);
   haptic(40);
-  // Abfrage sofort starten, Kamera kurz grün zeigen, dann Ergebnis
-  fetchProduct(code).catch(() => {});
-  setTimeout(() => check(code), 160);
-  return true;
+  fetchProduct(code).catch(() => {});       // Abfrage sofort starten
+  setTimeout(() => check(code), 120);
+  return false;
 }
 
 function loadScript(src) {
@@ -808,13 +892,13 @@ async function openScanner() {
     video.srcObject = stream;
     await video.play();
     camera.classList.add('live');
+    document.body.classList.add('scanning');
     setStatus('Barcode in den Rahmen halten');
     hint.textContent = 'Tippen, um die Kamera zu starten';
     const track = stream.getVideoTracks()[0];
     const caps = track.getCapabilities ? track.getCapabilities() : {};
     torchTrack = 'torch' in caps ? track : null;
     $('#btn-torch').hidden = !torchTrack;
-    camera.scrollIntoView({ behavior: 'smooth', block: 'center' });
     if ('BarcodeDetector' in window) await nativeLoop(); else await zxingLoop();
   } catch (err) {
     closeScanner();

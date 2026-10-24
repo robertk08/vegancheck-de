@@ -42,13 +42,38 @@ const MOSTLY_PLANT = /aroma|aromen|flavou?r|lecithin|e ?322|emulgator|emulsifier
 /* Kategorien als Rückfall, wenn es keine Zutatenliste gibt. */
 const CAT_NO = /^en:(meats?|.*-meats?|sausages|hams|poultry|fishes|seafood|.*-fish|fish-.*|gelatin|charcuterie|.*-sausages|bacon|.*-broths-of-meat)$/;
 const CAT_VEG = /^en:(dairies|milks?|cheeses|.*-cheeses|yogurts|butters|creams|eggs|honeys|.*-honeys|dairy-desserts|milk-chocolates|ice-creams)$/;
-const CAT_PLANT = /^en:(fruits|vegetables|.*-vegetables|fresh-fruits|legumes|plant-based-.*|cereals-and-potatoes|pastas|rices|nuts|seeds|vegetable-oils|olive-oils|.*-oils|sugars|coffees|teas|waters|.*-waters|fruit-juices|juices|.*-juices|soft-drinks|flours|spices|salts|jams|meat-alternatives|dark-chocolates|tofu|breads)$/;
+const CAT_PLANT = /^en:(fruits|vegetables|.*-vegetables|fresh-fruits|legumes|plant-based-.*|cereals-and-potatoes|pastas|rices|nuts|seeds|vegetable-oils|olive-oils|.*-oils|sugars|coffees|teas|waters|.*-waters|fruit-juices|juices|.*-juices|soft-drinks|flours|spices|salts|jams|meat-alternatives|dark-chocolates|tofu|breads|hard-liquors|gins|vodkas|rums|whiskies|brandys|eaux-de-vie|beers|lagers)$/;
 
 function categoryHint(product) {
   const cats = product.categories_tags || [];
   if (cats.some((c) => CAT_NO.test(c))) return 'no';
   if (cats.some((c) => CAT_VEG.test(c))) return 'vegetarian';
   if (cats.some((c) => CAT_PLANT.test(c))) return 'likely';
+  return null;
+}
+
+/**
+ * Rückfall ohne Zutatenliste: Was verraten Name, Sachbezeichnung und Kategorien?
+ * „6 Bio-Eier“ → vegetarisch, „Hähnchenbrustfilet“ → nicht vegetarisch,
+ * „Vegane Pommersche“ → wahrscheinlich vegan. Ergebnis: { key, reason } oder null.
+ */
+function fallbackHint(product) {
+  const name = [productTitle(product), product.generic_name_de, product.generic_name].filter(Boolean).join(', ');
+  if (/\b(vegan|pflanzlich|plant[- ]based)/i.test(name)) return { key: 'likely', reason: '„Vegan“ bzw. „pflanzlich“ steht im Produktnamen.' };
+  const byName = RULES.analyze(name.replace(/[-/]/g, ' '));
+  if (byName.level === 'no' || byName.level === 'vegetarian') {
+    return { key: byName.level, reason: `Laut Produktname: ${byName.hits.filter((h) => h.level !== 'maybe').map((h) => h.text).join(', ')}.` };
+  }
+  const cat = categoryHint(product);
+  if (cat) return { key: cat, reason: 'Abgeleitet aus der Produktkategorie.' };
+  // Kategorien in anderen Sprachen (z. B. „de:eier-aus-ökologischer-erzeugung“) als Text prüfen
+  const catText = (product.categories_tags || []).map((c) => c.replace(/^[a-z]{2}:/, '').replace(/-/g, ' ')).join(', ');
+  const byCat = RULES.analyze(catText);
+  if (byCat.level === 'no' || byCat.level === 'vegetarian') return { key: byCat.level, reason: 'Abgeleitet aus der Produktkategorie.' };
+  // Von Natur aus pflanzlich? („Kiwi“, „Olivenöl“, „Basmati Reis“)
+  const plant = RULES.plantFood(name);
+  if (plant && plant.fined) return { key: 'unknown', reason: 'Wein und Sekt werden oft mit Gelatine, Kasein oder Eiweiß geklärt – das steht nicht auf dem Etikett.' };
+  if (plant) return { key: 'likely', reason: 'Laut Produktname ein pflanzliches Lebensmittel.' };
   return null;
 }
 
@@ -144,12 +169,18 @@ function assess(product) {
     if (local.level === 'unknown' && local.hits.every((h) => MOSTLY_PLANT.test(h.note) || MOSTLY_PLANT.test(h.text))) {
       verdict = VERDICTS.likely;
     }
+    // Wein & Co.: Klärhilfen stehen nicht in der Zutatenliste
+    if ((local.level === 'vegan' || local.level === 'unknown') && RULES.isFined(productTitle(product) + ' ' + (product.categories_tags || []).join(' '))) {
+      verdict = Object.assign({}, VERDICTS.unknown, { sub: 'Klärung unbekannt' });
+      reasons.push('Wein und Sekt werden oft mit Gelatine, Kasein oder Eiweiß geklärt – das steht nicht auf dem Etikett.');
+      return { verdict, reasons, veganLabel };
+    }
     const names = (lvl) => local.hits.filter((h) => h.level === lvl).map((h) => h.text).slice(0, 8);
     if (local.level === 'vegan') reasons.push('Keine tierischen Zutaten im Zutatentext gefunden.');
     if (names('no').length) reasons.push('Nicht vegetarisch wegen: ' + names('no').join(', ') + '.');
     if (names('veg').length) reasons.push('Nicht vegan wegen: ' + names('veg').join(', ') + '.');
     if (names('maybe').length) reasons.push('Nicht eindeutig: ' + names('maybe').join(', ') + '.');
-    reasons.push('Eigene Auswertung des Zutatentexts.');
+    reasons.push(product._ocr && !product.ingredients_text ? 'Aus dem Foto der Zutatenliste gelesen.' : 'Eigene Auswertung des Zutatentexts.');
   } else {
     // vegan 'maybe' oder gar keine Analyse
     const maybe = ingredientsWith(product, 'vegan', 'maybe');
@@ -161,16 +192,14 @@ function assess(product) {
       verdict = Object.assign({}, VERDICTS.unknown, {
         sub: vegetarianTag === 'yes' || vegetarianLabel ? 'Vegetarisch, vegan unklar' : VERDICTS.unknown.sub
       });
-      const hint = categoryHint(product);
-      const nameVegan = /\bvegan/i.test(productTitle(product));
+      const hint = !(product.ingredients || []).length ? fallbackHint(product) : null;
       if (maybe.length && maybe.every((m) => MOSTLY_PLANT.test(m)) && vegetarianTag !== 'maybe') {
         verdict = VERDICTS.likely;
         reasons.push('Nur ' + maybe.join(', ') + ' könnte tierisch sein – ist aber fast immer pflanzlich.');
-      } else if (!(product.ingredients || []).length && (hint || nameVegan)) {
+      } else if (hint) {
         // Keine Zutaten: Name oder Kategorie geben den Ausschlag.
-        const k = nameVegan ? 'likely' : hint;
-        verdict = VERDICTS[k];
-        reasons.push(nameVegan ? '„Vegan“ steht im Produktnamen.' : 'Abgeleitet aus der Produktkategorie.');
+        verdict = VERDICTS[hint.key];
+        reasons.push(hint.reason);
         reasons.push('Keine Zutatenliste hinterlegt – im Zweifel Verpackung prüfen.');
       } else if (maybe.length) {
         reasons.push('Nicht eindeutig: ' + maybe.join(', ') + ' – kann tierisch oder pflanzlich sein.');
@@ -182,6 +211,12 @@ function assess(product) {
     }
   }
 
+  // Nichts Belastbares gefunden: Wie sind gleichnamige Produkte eingestuft?
+  const sim = product._similar;
+  if (verdict.key === 'unknown' && sim) {
+    verdict = Object.assign({}, VERDICTS[sim.key === 'vegan' ? 'likely' : sim.key], { sub: 'Laut ähnlichen Produkten' });
+    reasons.unshift(`${sim.count} von ${sim.total} gleichnamigen Produkten sind ${sim.key === 'vegan' ? 'vegan' : VERDICTS[sim.key].title.toLowerCase()}.`);
+  }
   return { verdict, reasons, veganLabel };
 }
 
@@ -190,7 +225,7 @@ function productTitle(p) {
 }
 
 function ingredientsText(product) {
-  const text = product.ingredients_text_de || product.ingredients_text || '';
+  const text = product.ingredients_text_de || product.ingredients_text || product._ocr || '';
   // Open Food Facts markiert Allergene mit Unterstrichen (_Milch_).
   return text.replace(/_/g, '').replace(/\s+/g, ' ').trim();
 }
