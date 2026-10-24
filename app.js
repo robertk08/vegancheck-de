@@ -362,7 +362,9 @@ const ALLERGENS = {
   'en:sesame-seeds': 'Sesam', 'en:sulphur-dioxide-and-sulphites': 'Sulfite', 'en:lupin': 'Lupine'
 };
 function allergenNames(tags) {
-  const out = (tags || []).map((t) => {
+  // Manche Einträge bündeln mehrere Tags in einem: „en:en:milk en:nuts en:soybeans“
+  const split = (tags || []).flatMap((t) => t.split(/[\s,]+/)).filter((t) => /[a-z]{3,}/i.test(t));
+  const out = split.map((t) => {
     const clean = 'en:' + t.replace(/^([a-z]{2}:\s*)+/i, '').trim();
     return ALLERGENS[clean] || clean.slice(3).replace(/-/g, ' ');
   }).filter(Boolean).map((n) => n.charAt(0).toUpperCase() + n.slice(1));
